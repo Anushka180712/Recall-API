@@ -384,7 +384,7 @@ test('repeating a question inside the same chat is stopped and scrolls to the ea
 
 test('undo right after a bulk delete brings the chats back', async (t) => {
   const env = await launch([
-    { id: 'untitled-1', title: 'New chat', prompts: ['hi'], updatedDaysAgo: 5 },
+    { id: 'untitled-1', title: 'New chat', prompts: ['how to bake banana bread'], updatedDaysAgo: 5 },
     { id: 'greeting-2', title: 'Greeting', prompts: ['hello', 'thanks'], updatedDaysAgo: 3 },
   ]);
   t.after(env.close);
@@ -403,6 +403,11 @@ test('undo right after a bulk delete brings the chats back', async (t) => {
   assert.match(await recall(page, 'recall-undo-result').innerText(), /Restored 2 chats/);
   assert.deepEqual(server.restored.sort(), ['greeting-2', 'untitled-1']);
   assert.ok(server.conversations.has('untitled-1'));
+  // Restored chats can be learned again (and are, right away).
+  await page.waitForTimeout(1500);
+  const { 'recall.index': idx } = await env.worker.evaluate(() => globalThis.chrome.storage.local.get('recall.index'));
+  assert.ok(!idx.x.includes('greeting-2') && !idx.x.includes('untitled-1'), 'no longer marked deleted');
+  assert.ok(idx.e.some(([conv]) => conv === 'untitled-1'), 're-learned');
 });
 
 test('"Pause Recall for 1 hour" sends the message, stops checks, and can be resumed from the popup', async (t) => {
@@ -699,5 +704,44 @@ test('safety net: a send that skips the keyboard and the send button is still ch
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.querySelectorAll('[data-message-author-role="assistant"]').length === 1);
   assert.equal(server.sends.length, 3);
+  assert.equal(await recall(page, 'recall-dialog').count(), 0);
+});
+
+test('chats deleted outside Recall are forgotten: from ChatGPT’s sidebar, and ones found missing when opened', async (t) => {
+  const env = await launch([
+    { id: 'chat-sql', title: 'SQL joins', prompts: ['Explain the difference between inner join and left join in SQL'], updatedDaysAgo: 6 },
+  ]);
+  t.after(env.close);
+  const { page, server, worker } = env;
+  await askInNewChat(env, 'How do I reverse a linked list in Python?');
+  const pythonId = page.url().match(/\/c\/([\w-]+)/)[1];
+  await page.goto(`${ORIGIN}/c/chat-sql`);
+  await waitForRecall(page);
+  await settle(page, 2500); // learned by opening it
+
+  // 1. Deleted with ChatGPT's own sidebar menu: Recall forgets it at once.
+  await page.evaluate((id) => window.mockDelete(id), pythonId);
+  await settle(page, 1500);
+  const { 'recall.index': idx } = await worker.evaluate(() => globalThis.chrome.storage.local.get('recall.index'));
+  assert.ok(!idx.e.some(([conv]) => conv === pythonId), 'its prompts are gone from Recall');
+  assert.ok(idx.x.includes(pythonId), 'and it is remembered as deleted');
+  await freshChat(page);
+  await typePrompt(page, 'reverse a linked list in python');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelectorAll('[data-message-author-role="assistant"]').length === 1);
+  assert.equal(await recall(page, 'recall-dialog').count(), 0, 'no redirect to a deleted chat');
+
+  // 2. Deleted elsewhere (other device): found out when opening it, then forgotten.
+  server.conversations.delete('chat-sql');
+  await freshChat(page);
+  await typePrompt(page, 'difference between left join and inner join in sql');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  await recall(page, 'recall-open-top').click();
+  await recall(page, 'recall-chat-gone').waitFor({ timeout: 10000 });
+  await freshChat(page);
+  await typePrompt(page, 'difference between left join and inner join in sql');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelectorAll('[data-message-author-role="assistant"]').length === 1);
   assert.equal(await recall(page, 'recall-dialog').count(), 0);
 });

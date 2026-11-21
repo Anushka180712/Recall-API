@@ -298,5 +298,8 @@
   },
   "jumpMissed": {
     "message": "Le chat est ouvert, mais ce message précis est introuvable sur la page. Faites défiler pour le chercher."
+  },
+  "chatGone": {
+    "message": "Ce chat a été supprimé, Recall l’a donc oublié."
   }
 }

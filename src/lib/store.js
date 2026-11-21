@@ -58,10 +58,13 @@
        * Merge-then-write so two open ChatGPT tabs never clobber each other's
        * newly learned prompts. Deletions are applied after the merge.
        */
-      async saveIndex(index, { removedConversations = [] } = {}) {
+      async saveIndex(index, { removedConversations = [], restoredConversations = [] } = {}) {
         const stored = await getOne(local, KEYS.index, null);
+        // A restored chat must not be re-deleted by the stored "deleted" list.
+        if (stored && restoredConversations.length) stored.x = (stored.x || []).filter((id) => !restoredConversations.includes(id));
         if (stored) index.merge(stored);
         for (const id of removedConversations) index.removeConversation(id);
+        for (const id of restoredConversations) index.restoreConversation(id);
         await local.set({ [KEYS.index]: index.toJSON() });
         return index;
       },

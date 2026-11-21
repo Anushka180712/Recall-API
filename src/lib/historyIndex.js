@@ -146,6 +146,11 @@
       return removed;
     }
 
+    /** Allow a conversation to be learned again (it was restored after a delete). */
+    restoreConversation(conversationId) {
+      this.tombstones.delete(conversationId);
+    }
+
     clear(at = Date.now()) {
       this.entries.clear();
       this.postings.clear();

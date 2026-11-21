@@ -11,7 +11,7 @@ and clears out stale chats in a few clicks instead of one by one.
 
 [![CI](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml/badge.svg)](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4f46e5)
-![Tests](https://img.shields.io/badge/tests-187%20passing-059669)
+![Tests](https://img.shields.io/badge/tests-189%20passing-059669)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-059669)
 ![Languages](https://img.shields.io/badge/UI-6%20languages-0ea5e9)
 ![Privacy](https://img.shields.io/badge/data-stays%20on%20your%20device-7c3aed)
@@ -443,11 +443,22 @@ The matching logic is pure and unit-tested in [`src/lib/jump.js`](src/lib/jump.j
 2. The prompts inside each chat are fetched **6 at a time**, with automatic back-off on HTTP 429.
 3. Progress is saved every 25 chats; chats already learned and unchanged are skipped on later runs.
 
+### Data flow: chats you delete yourself
+
+You can keep deleting chats however you like: Recall's cleanup panel, ChatGPT's own sidebar menu, or anywhere else.
+Recall forgets deleted chats in every case, so it never sends you to a chat that's gone:
+
+| You delete... | How Recall finds out |
+|---|---|
+| with Recall's cleanup | It made the request itself. |
+| from ChatGPT's sidebar (or *Delete all chats*) | `page-hook.js` sees ChatGPT's own delete request succeed and tells Recall immediately. |
+| on another device or the mobile app | When you open it (ChatGPT answers "not found", Recall forgets it and tells you), and a quiet check of your chat list at most every 6 hours (each missing chat is double-checked, so archived chats are kept). |
+
 ### Data flow: cleanup and undo
 
 1. List chats (cached for 2 minutes), add the prompts Recall knows, score them (`cleanup.suggest`).
 2. You tick and confirm, then each chat is hidden with `PATCH is_visible:false`, 3 at a time. A 404 counts as done.
-3. **Undo** sends `PATCH is_visible:true` for the chats just deleted.
+3. **Undo** sends `PATCH is_visible:true` for the chats just deleted, and Recall re-learns them.
 4. The index forgets deleted chats and records a tombstone so other tabs don't re-add them.
 
 ### What is stored, and where
@@ -508,8 +519,8 @@ src/
   popup/                      popup + full settings page (popup.html?options=1)
   background/service-worker.js  defaults on install, re-inject after update, shortcut, OFF badge
 tests/
-  unit/                       164 Node tests for src/lib, translations and the manifest
-  e2e/                        23 real-browser tests (Chromium + the extension + a mock chat app)
+  unit/                       165 Node tests for src/lib, translations and the manifest
+  e2e/                        24 real-browser tests (Chromium + the extension + a mock chat app)
   fixtures/mock-chat.html     mock chat app used by the e2e tests and screenshots
 scripts/
   package.js                  builds the Chrome and Firefox zips
@@ -622,7 +633,7 @@ after each change. Turn on *Debug logging* to watch decisions in the console.
 
 ## Testing
 
-**187 automated tests** run on every push via GitHub Actions.
+**189 automated tests** run on every push via GitHub Actions.
 
 | Suite | Tests | What it covers |
 |---|---|---|
@@ -635,7 +646,7 @@ after each change. Turn on *Debug logging* to watch decisions in the console.
 | `text` | 9 | Normalising and tokenising, including CJK, Hindi and other languages' filler words. |
 | `i18n`, `log`, `manifest`, `settings`, `routes` | 19 | Every locale has every key and placeholder within store limits; log levels and prompt redaction; every manifest file exists, libraries load in the right order, every `t('key')` used in code is translated; the Firefox manifest. |
 | `jump` | 6 | Message id beats text, exact text, re-phrased matches, title-only matches, truncated long messages, no wrong guesses. |
-| **e2e** (real Chromium) | 23 | **The network safety net catching a send that skips the keyboard and the button** (Keep editing puts the text back, Ask anyway releases it, Take me there stops it), **Repeat after repeat in one page without reloading** (Esc, send button, *Ask anyway* covering exactly one send, switching chats, *Take me there*, then repeats there), **a re-injected copy taking over cleanly** (one dialog, one send), redirect, **several similar chats listed and any one opens at its own prompt**, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message (and below the sticky header) in a chat that renders late, jumps to the bottom and keeps the previous chat on screen during navigation, including matches that came only from the chat's title, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
+| **e2e** (real Chromium) | 24 | **Chats deleted from ChatGPT's own sidebar, or elsewhere, are forgotten and never suggested** (and undone deletes are re-learned), **The network safety net catching a send that skips the keyboard and the button** (Keep editing puts the text back, Ask anyway releases it, Take me there stops it), **Repeat after repeat in one page without reloading** (Esc, send button, *Ask anyway* covering exactly one send, switching chats, *Take me there*, then repeats there), **a re-injected copy taking over cleanly** (one dialog, one send), redirect, **several similar chats listed and any one opens at its own prompt**, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message (and below the sticky header) in a chat that renders late, jumps to the bottom and keeps the previous chat on screen during navigation, including matches that came only from the chat's title, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
 
 The end-to-end tests serve a mock chat app ([`tests/fixtures/mock-chat.html`](tests/fixtures/mock-chat.html)) on
 `https://chatgpt.com` via Playwright request routing, so no real account or network is involved:
@@ -679,6 +690,13 @@ Yes. Besides catching Enter and the send button, Recall checks ChatGPT's own "se
 it leaves the browser. Only an explicit "give me a new answer" (or the other rules in the table) lets a repeat
 through. If you see `[Recall:content] a send reached ChatGPT without passing the keyboard/button check` in the
 console, the safety net did its job; please report it so the first line can be updated.
+</details>
+
+<details open>
+<summary><b>Can I still delete chats from ChatGPT's sidebar?</b></summary>
+
+Yes, both ways work side by side: delete from ChatGPT's sidebar whenever you like, or tidy up many at once with
+Recall's cleanup. Either way Recall forgets the deleted chat at once and will never suggest it again.
 </details>
 
 <details open>

@@ -18,6 +18,9 @@
  * switched off), the request goes through untouched. Regenerating an answer
  * ("variant"/"continue") is never held. Nothing is sent anywhere else.
  *
+ * It also notices when you delete chats with ChatGPT's own menu (one chat, or
+ * "Delete all"), so Recall forgets them right away.
+ *
  * Messages between worlds are JSON strings, because object payloads don't
  * cross from the page world to the extension's isolated world.
  */
@@ -96,6 +99,29 @@
     }
   }
 
+  /**
+   * ChatGPT's own "Delete" (sidebar menu, or Settings > Delete all chats):
+   *   PATCH /backend-api/conversation/<id>  {is_visible: false}
+   *   PATCH /backend-api/conversations      {is_visible: false}
+   * Returns {id} / {all: true}, or null for any other request.
+   */
+  function readDelete(input, init) {
+    try {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input && input.url;
+      const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+      if (!url || (method !== 'PATCH' && method !== 'DELETE')) return null;
+      const path = new URL(url, location.href).pathname;
+      const body = init && typeof init.body === 'string' ? JSON.parse(init.body) : {};
+      if (method === 'PATCH' && body.is_visible !== false) return null;
+      const one = path.match(/\/backend-api\/conversation\/([0-9a-zA-Z-]{6,})\/?$/);
+      if (one) return { id: one[1] };
+      if (/\/backend-api\/conversations\/?$/.test(path)) return { all: true };
+    } catch {
+      /* not a delete */
+    }
+    return null;
+  }
+
   window.fetch = async function recallFetch(input, init) {
     if (isSend(input, init)) {
       const info = readMessage(init && init.body);
@@ -103,6 +129,14 @@
         throw new DOMException('Recall held this message back', 'AbortError');
       }
     }
-    return originalFetch.apply(this, arguments);
+    const deleted = readDelete(input, init);
+    const response = originalFetch.apply(this, arguments);
+    if (deleted) {
+      // Tell Recall once ChatGPT confirms, so it never suggests a deleted chat.
+      response
+        .then((res) => res.ok && document.dispatchEvent(new CustomEvent('recall:deleted', { detail: JSON.stringify(deleted) })))
+        .catch(() => {});
+    }
+    return response;
   };
 })();

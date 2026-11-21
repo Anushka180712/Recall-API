@@ -298,5 +298,8 @@
   },
   "jumpMissed": {
     "message": "Chat geöffnet, aber genau diese Nachricht wurde nicht gefunden. Scroll, um sie zu suchen."
+  },
+  "chatGone": {
+    "message": "Dieser Chat wurde gelöscht, Recall hat ihn vergessen."
   }
 }

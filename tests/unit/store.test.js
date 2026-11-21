@@ -108,3 +108,16 @@ test('health is recorded with a timestamp', async () => {
   assert.equal(health.composer, false);
   assert.ok(health.at > 0);
 });
+
+test('a restored chat is not re-deleted by the stored "deleted" list', async () => {
+  const { store } = fresh();
+  const idx = new HistoryIndex();
+  idx.add({ conversationId: 'c1', prompt: 'how to bake banana bread' });
+  await store.saveIndex(idx, { removedConversations: ['c1'] });
+  const again = await store.loadIndex();
+  again.restoreConversation('c1');
+  again.add({ conversationId: 'c1', prompt: 'how to bake banana bread' });
+  await store.saveIndex(again, { restoredConversations: ['c1'] });
+  const final = await store.loadIndex();
+  assert.equal(final.promptsFor('c1').length, 1);
+});

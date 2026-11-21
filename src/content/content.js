@@ -535,17 +535,35 @@
    * data-message-id, which is the most reliable anchor there is. If this
    * fails, text matching still works.
    */
+  let lookupInFlight = 0;
   async function lookUpMessage(target) {
+    lookupInFlight = target.at;
     try {
       const conv = await api.getConversation(target.id);
       const hit = jumpMod.resolve(conv.messages || [], target);
       const current = loadJump();
+      if (current && current.at === target.at) {
+        current.lookedUp = true;
+        saveJump(current);
+      }
       if (!hit || !current || current.at !== target.at) return jumpLog.debug('message lookup: no confident match', { messages: (conv.messages || []).length });
       const msg = conv.messages[hit.index];
       Object.assign(current, { messageId: msg.id, text: msg.text });
       saveJump(current);
       jumpLog.debug('message lookup', { messageId: msg.id, position: hit.index + 1, of: conv.messages.length, score: Math.round(hit.score * 100) / 100 });
     } catch (err) {
+      if (err.status === 404) {
+        // Deleted since Recall learned it (e.g. from ChatGPT's sidebar).
+        clearInterval(jumpTimer);
+        try {
+          sessionStorage.removeItem(JUMP_KEY);
+        } catch {
+          /* ignore */
+        }
+        forgetChats([target.id], 'opened a deleted chat');
+        overlay.toast(t('chatGone', 'That chat was deleted, so Recall has forgotten it.'), [], { timeout: 6000, testid: 'recall-chat-gone' });
+        return;
+      }
       jumpLog.debug('message lookup failed; using text matching', { error: err.message });
     }
   }
@@ -583,6 +601,10 @@
     if (!first || Date.now() - first.at > 60000) return;
     if (routes.conversationId(location.href) !== first.id) return;
     clearInterval(jumpTimer);
+    if (!first.lookedUp && lookupInFlight !== first.at) {
+      // Arrived by a full page load before the lookup finished: do it here.
+      lookUpMessage(first);
+    }
 
     const started = Date.now();
     let lastCount = -1;
@@ -853,6 +875,66 @@
     }
   }
 
+  // ------------------------------------------------- deleted chats
+  // Chats can be deleted three ways, and Recall forgets them in all three:
+  //   1. with Recall's cleanup (see openCleanup below),
+  //   2. with ChatGPT's own sidebar menu or "Delete all chats" (page-hook.js
+  //      reports the request as it happens),
+  //   3. anywhere else (another device, the mobile app): caught when you open
+  //      the chat (404) and by a quiet sync with your chat list.
+
+  /** Forget chats that no longer exist in ChatGPT. */
+  function forgetChats(ids, why) {
+    const known = ids.filter((id) => state.index.conversations.has(id) || state.index.promptsFor(id, { includeTitles: true }).length);
+    for (const id of ids) state.index.removeConversation(id);
+    state.removed.push(...ids);
+    listCache.data = null;
+    state.dirty = true;
+    flush(); // save now: a deleted chat must never come back
+    if (known.length) log.info('forgot deleted chats', { count: known.length, why });
+  }
+
+  function onPageDelete(e) {
+    if (retired || superseded()) return;
+    let d;
+    try {
+      d = JSON.parse(e.detail);
+    } catch {
+      return;
+    }
+    if (d.all) {
+      log.info('all chats were deleted in ChatGPT; clearing Recall’s memory of them');
+      listCache.data = null;
+      store.clearIndex().then((fresh) => (state.index = fresh)).catch(() => {});
+    } else if (d.id) {
+      forgetChats([d.id], 'deleted in ChatGPT');
+    }
+  }
+  document.addEventListener('recall:deleted', onPageDelete);
+  cleanups.push(() => document.removeEventListener('recall:deleted', onPageDelete));
+
+  /**
+   * Compare what Recall knows with your chat list. When the list came back
+   * complete, any known chat missing from it was deleted or archived; each is
+   * double-checked (a 404 means deleted) so archived chats are kept.
+   */
+  async function syncDeletedChats(list, limit) {
+    if (!list || list.length >= limit) return; // partial list: can't tell
+    const present = new Set(list.map((c) => c.id));
+    const known = new Set([...state.index.conversations.keys(), ...state.index.byConversation.keys()]);
+    const missing = [...known].filter((id) => !present.has(id)).slice(0, 30);
+    if (!missing.length) return;
+    const gone = [];
+    await chatgptApi.mapPool(missing, 3, async (id) => {
+      try {
+        await api.getConversation(id);
+      } catch (err) {
+        if (err.status === 404) gone.push(id);
+      }
+    });
+    if (gone.length) forgetChats(gone, 'missing from your chat list');
+  }
+
   // ---------------------------------------------------------------- cleanup
   /** The chat list is reused for 2 minutes (nudge -> cleanup panel -> reopen). */
   const listCache = { at: 0, limit: 0, data: null };
@@ -862,6 +944,7 @@
     }
     const data = await api.listConversations({ limit });
     Object.assign(listCache, { at: Date.now(), limit, data });
+    syncDeletedChats(data, limit).catch((err) => log.debug('deleted-chat sync skipped', { error: err.message }));
     return data;
   }
 
@@ -910,13 +993,22 @@
       onUndo: async (ids) => {
         const back = await api.restoreMany(ids);
         listCache.data = null;
+        // Let restored chats be learned again, and learn them now.
+        for (const id of back.restored) state.index.restoreConversation(id);
+        state.removed = state.removed.filter((id) => !back.restored.includes(id));
+        api.getConversations(back.restored, {
+          onResult: (full) => {
+            for (const p of full.prompts || []) state.index.add({ conversationId: full.id, prompt: p, createdAt: 0, title: full.title, source: 'imported' });
+          },
+        })
+          .then(() => store.saveIndex(state.index, { restoredConversations: back.restored }))
+          .catch((err) => log.warn('could not re-learn restored chats', { error: err.message }));
         try {
           if (back.restored.length) await store.bumpStat('deleted', -back.restored.length);
         } catch {
           /* stats are cosmetic */
         }
         log.info('restored chats', { restored: back.restored.length, failed: back.failed.length });
-        // Restored chats are re-learned the next time you open them or import.
         return back;
       },
       onFinished: (res) => {
@@ -944,6 +1036,12 @@
         { testid: 'recall-welcome' }
       );
       return;
+    }
+
+    // A quiet check for chats deleted elsewhere, at most every 6 hours.
+    if (now - (meta.lastSyncAt || 0) > 6 * 3600 * 1000) {
+      await store.setMeta({ lastSyncAt: now });
+      listConversationsCached({ limit: 300, fresh: true }).catch((err) => log.debug('chat list sync skipped', { error: err.message }));
     }
 
     const s = state.settings;

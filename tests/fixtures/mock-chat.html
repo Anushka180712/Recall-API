@@ -138,6 +138,11 @@
       });
       // A send that bypasses the keyboard and the send button (like a voice or
       // shortcut send, or a page change Recall's listeners don't know about).
+      // ChatGPT's own sidebar "Delete" (same request as the real app).
+      window.mockDelete = async (id) => {
+        await fetch('/backend-api/conversation/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_visible: false }) });
+        renderSidebar();
+      };
       window.mockSendDirect = (text) => {
         box.textContent = text;
         return send();
