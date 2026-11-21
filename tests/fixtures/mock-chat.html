@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mock chat (test fixture)</title>
+    <style>
+      body { margin: 0; font: 14px/1.5 system-ui, sans-serif; display: grid; grid-template-columns: 240px 1fr; height: 100vh; background: #fafafa; color: #222; }
+      nav { background: #f0f0f3; padding: 12px; overflow: auto; border-right: 1px solid #e3e3e8; }
+      nav h3 { font-size: 11px; text-transform: uppercase; color: #888; letter-spacing: .05em; margin: 8px 6px; }
+      nav a { display: block; padding: 6px 8px; border-radius: 8px; color: #333; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      nav a:hover, nav a.active { background: #e2e2e8; }
+      main { display: flex; flex-direction: column; height: 100vh; }
+      #thread { flex: 1; overflow: auto; padding: 24px 15%; }
+      .msg { margin: 10px 0; padding: 10px 14px; border-radius: 14px; max-width: 80%; }
+      [data-message-author-role="user"] { background: #e9e9ef; margin-left: auto; }
+      [data-message-author-role="assistant"] { background: transparent; }
+      form { margin: 0 15% 24px; display: flex; gap: 8px; border: 1px solid #ddd; border-radius: 24px; padding: 10px 10px 10px 18px; background: #fff; }
+      #prompt-textarea { flex: 1; outline: none; min-height: 22px; }
+      #prompt-textarea:empty::before { content: "Ask anything"; color: #aaa; }
+      button { border: 0; background: #222; color: #fff; border-radius: 50%; width: 34px; height: 34px; cursor: pointer; }
+      .empty { color: #999; text-align: center; margin-top: 30vh; font-size: 22px; }
+    </style>
+  </head>
+  <body>
+    <nav><h3>Chats</h3><div id="history"></div></nav>
+    <main>
+      <div id="thread"></div>
+      <form id="composer-form">
+        <div id="prompt-textarea" contenteditable="true"></div>
+        <button type="submit" data-testid="send-button" aria-label="Send prompt">↑</button>
+      </form>
+    </main>
+    <script>
+      // A deliberately small stand-in for a chat UI, used only by the tests.
+      const thread = document.getElementById('thread');
+      const box = document.getElementById('prompt-textarea');
+      const form = document.getElementById('composer-form');
+      const convId = () => (location.pathname.match(/\/c\/([\w-]+)/) || [])[1] || null;
+
+      async function renderSidebar() {
+        const res = await fetch('/backend-api/conversations?offset=0&limit=50', { headers: { Authorization: 'Bearer mock' } });
+        const data = await res.json();
+        const el = document.getElementById('history');
+        el.replaceChildren(...data.items.map((c) => {
+          const a = document.createElement('a');
+          a.href = '/c/' + c.id;
+          a.textContent = c.title || 'New chat';
+          if (c.id === convId()) a.className = 'active';
+          return a;
+        }));
+      }
+
+      function addMsg(role, text) {
+        const d = document.createElement('div');
+        d.className = 'msg';
+        d.dataset.messageAuthorRole = role;
+        d.textContent = text;
+        thread.append(d);
+      }
+
+      async function renderThread() {
+        thread.replaceChildren();
+        const id = convId();
+        if (!id) {
+          const e = document.createElement('div');
+          e.className = 'empty';
+          e.textContent = 'What can I help with?';
+          thread.append(e);
+          return;
+        }
+        const res = await fetch('/backend-api/conversation/' + id, { headers: { Authorization: 'Bearer mock' } });
+        if (!res.ok) return;
+        const data = await res.json();
+        document.title = data.title || 'Mock chat';
+        const msgs = Object.values(data.mapping).map((n) => n.message).sort((a, b) => a.create_time - b.create_time);
+        for (const m of msgs) addMsg(m.author.role, m.content.parts.join('\n'));
+      }
+
+      async function send() {
+        const text = box.innerText.trim();
+        if (!text) return;
+        box.textContent = '';
+        const empty = thread.querySelector('.empty');
+        if (empty) empty.remove();
+        addMsg('user', text);
+        const res = await fetch('/mock/send', { method: 'POST', body: JSON.stringify({ conversationId: convId(), text }) });
+        const { conversationId, answer } = await res.json();
+        if (conversationId !== convId()) history.pushState({}, '', '/c/' + conversationId);
+        addMsg('assistant', answer);
+        renderSidebar();
+      }
+
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          send();
+        }
+      });
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        send();
+      });
+      window.addEventListener('popstate', () => { renderThread(); renderSidebar(); });
+
+      renderSidebar();
+      renderThread();
+    </script>
+  </body>
+</html>

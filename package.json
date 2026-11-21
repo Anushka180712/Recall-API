@@ -1,0 +1,30 @@
+{
+  "name": "recall-chatgpt",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser extension that redirects you to the ChatGPT chat where you already asked the same question, and bulk-cleans stale chats.",
+  "license": "MIT",
+  "author": "Anushka180712",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Anushka180712/Recall-API.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"tests/unit/**/*.test.js\"",
+    "test:e2e": "node --test --test-concurrency=1 \"tests/e2e/**/*.test.js\"",
+    "test:all": "npm test && npm run test:e2e",
+    "coverage": "node --test --experimental-test-coverage \"tests/unit/**/*.test.js\"",
+    "lint": "eslint .",
+    "screenshots": "node scripts/screenshots.js",
+    "package": "node scripts/package.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "playwright": "^1.65.1"
+  }
+}
