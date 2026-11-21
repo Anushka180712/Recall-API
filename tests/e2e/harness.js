@@ -24,7 +24,10 @@ function browserOptions() {
 
 /** In-memory "server" holding conversations. */
 class MockServer {
-  constructor(seed = []) {
+  constructor(seed = [], { latencyMs = 0 } = {}) {
+    this.latencyMs = latencyMs; // simulated server delay for /backend-api calls
+    this.inFlight = 0;
+    this.peakInFlight = 0;
     this.conversations = new Map();
     this.sends = [];
     this.deleted = [];
@@ -46,6 +49,13 @@ class MockServer {
     const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
     if (url.pathname === '/api/auth/session') return json({ accessToken: 'mock-token' });
+
+    if (this.latencyMs && url.pathname.startsWith('/backend-api/')) {
+      this.inFlight++;
+      this.peakInFlight = Math.max(this.peakInFlight, this.inFlight);
+      await new Promise((r) => setTimeout(r, this.latencyMs));
+      this.inFlight--;
+    }
 
     if (url.pathname === '/backend-api/conversations') {
       const off = Number(url.searchParams.get('offset') || 0);
@@ -95,9 +105,9 @@ class MockServer {
   }
 }
 
-async function launch(seed, { deviceScaleFactor = 1, viewport = { width: 1280, height: 800 } } = {}) {
+async function launch(seed, { deviceScaleFactor = 1, viewport = { width: 1280, height: 800 }, latencyMs = 0 } = {}) {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'recall-e2e-'));
-  const server = new MockServer(seed);
+  const server = new MockServer(seed, { latencyMs });
   const context = await chromium.launchPersistentContext(userDataDir, {
     ...browserOptions(),
     headless: true,

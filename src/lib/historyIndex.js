@@ -27,8 +27,10 @@
       this.maxEntries = maxEntries;
       /** @type {Map<string, object>} id -> entry */
       this.entries = new Map();
-      /** @type {Map<string, number>} token -> number of entries containing it */
-      this.df = new Map();
+      /** @type {Map<string, Set<string>>} token -> ids of entries containing it (inverted index) */
+      this.postings = new Map();
+      /** @type {Map<string, Set<string>>} conversationId -> entry ids */
+      this.byConversation = new Map();
       /** @type {Map<string, {title: string, updatedAt: number}>} */
       this.conversations = new Map();
       /** Conversations deleted in ChatGPT; never re-added by a merge. */
@@ -53,22 +55,34 @@
       if (!conversationId || typeof prompt !== 'string') return false;
       if (this.tombstones.has(conversationId)) return false;
       const clean = prompt.trim();
-      if (!clean || text.tokenize(clean).length === 0) return false;
+      if (!clean) return false;
 
-      this.touchConversation(conversationId, title, createdAt);
-
+      // Cheap duplicate check first (hash only), so re-merging thousands of
+      // known prompts between tabs costs almost nothing.
       const id = HistoryIndex.entryId(conversationId, clean);
       const existing = this.entries.get(id);
       if (existing) {
+        this.touchConversation(conversationId, title, createdAt);
         // 0 means "time unknown" (e.g. learned by reading an open chat).
         if (createdAt > 0 && (existing.createdAt === 0 || createdAt < existing.createdAt)) existing.createdAt = createdAt;
         return false;
       }
 
       const stored = clean.length > MAX_PROMPT_CHARS ? clean.slice(0, MAX_PROMPT_CHARS) : clean;
-      const entry = { id, conversationId, prompt: stored, createdAt, source, f: similarity.features(stored) };
+      const f = similarity.features(stored);
+      if (!f.tokens.length) return false;
+      this.touchConversation(conversationId, title, createdAt);
+
+      const entry = { id, conversationId, prompt: stored, createdAt, source, f };
       this.entries.set(id, entry);
-      for (const t of new Set(entry.f.tokens)) this.df.set(t, (this.df.get(t) || 0) + 1);
+      let own = this.byConversation.get(conversationId);
+      if (!own) this.byConversation.set(conversationId, (own = new Set()));
+      own.add(id);
+      for (const t of new Set(f.tokens)) {
+        let set = this.postings.get(t);
+        if (!set) this.postings.set(t, (set = new Set()));
+        set.add(id);
+      }
 
       this.enforcePerConversationCap(conversationId);
       this.enforceCap();
@@ -88,10 +102,16 @@
       const entry = this.entries.get(id);
       if (!entry) return false;
       this.entries.delete(id);
+      const own = this.byConversation.get(entry.conversationId);
+      if (own) {
+        own.delete(id);
+        if (!own.size) this.byConversation.delete(entry.conversationId);
+      }
       for (const t of new Set(entry.f.tokens)) {
-        const n = (this.df.get(t) || 1) - 1;
-        if (n <= 0) this.df.delete(t);
-        else this.df.set(t, n);
+        const set = this.postings.get(t);
+        if (!set) continue;
+        set.delete(id);
+        if (!set.size) this.postings.delete(t);
       }
       return true;
     }
@@ -99,8 +119,8 @@
     /** Forget a conversation entirely (e.g. after it was deleted in ChatGPT). */
     removeConversation(conversationId) {
       let removed = 0;
-      for (const [id, e] of this.entries) {
-        if (e.conversationId === conversationId && this.remove(id)) removed++;
+      for (const id of [...(this.byConversation.get(conversationId) || [])]) {
+        if (this.remove(id)) removed++;
       }
       this.conversations.delete(conversationId);
       this.tombstones.add(conversationId);
@@ -110,30 +130,38 @@
 
     clear(at = Date.now()) {
       this.entries.clear();
-      this.df.clear();
+      this.postings.clear();
+      this.byConversation.clear();
       this.conversations.clear();
       this.tombstones.clear();
       this.clearedAt = at;
     }
 
     enforcePerConversationCap(conversationId) {
-      const own = [...this.entries.values()].filter((e) => e.conversationId === conversationId);
-      if (own.length <= MAX_PER_CONVERSATION) return;
+      const ids = this.byConversation.get(conversationId);
+      if (!ids || ids.size <= MAX_PER_CONVERSATION) return;
+      const own = [...ids].map((id) => this.entries.get(id));
       own.sort((a, b) => a.createdAt - b.createdAt);
       for (const e of own.slice(0, own.length - MAX_PER_CONVERSATION)) this.remove(e.id);
     }
 
     enforceCap() {
-      if (this.entries.size <= this.maxEntries) return;
+      // Trim in small batches (2 % slack) instead of re-sorting on every add.
+      if (this.entries.size <= this.maxEntries + Math.floor(this.maxEntries * 0.02)) return;
       const sorted = [...this.entries.values()].sort((a, b) => a.createdAt - b.createdAt);
       for (const e of sorted.slice(0, this.entries.size - this.maxEntries)) this.remove(e.id);
+    }
+
+    docFreq(token) {
+      const set = this.postings.get(token);
+      return set ? set.size : 0;
     }
 
     idf(token) {
       const n = this.entries.size;
       // Words never seen before are treated like words seen once, so a single
       // new word in the query can't drown out several shared rare ones.
-      const df = Math.max(1, this.df.get(token) || 0);
+      const df = Math.max(1, this.docFreq(token));
       return Math.log((n + 1) / (df + 1)) + 1;
     }
 
@@ -145,14 +173,27 @@
     search(prompt, { topK = 3, minScore = 0, excludeConversationId = null } = {}) {
       const q = similarity.features(prompt);
       if (!q.tokens.length) return [];
-      const qTokens = new Set(q.tokens);
       const idf = (t) => this.idf(t);
       const best = new Map();
 
-      for (const e of this.entries.values()) {
+      // Only score entries that share at least one word with the query (via
+      // the inverted index) instead of scanning the whole history.
+      const candidates = new Set();
+      for (const t of new Set(q.tokens)) {
+        const set = this.postings.get(t);
+        if (set) for (const id of set) candidates.add(id);
+      }
+
+      for (const id of candidates) {
+        const e = this.entries.get(id);
+        if (!e) continue;
         if (excludeConversationId && e.conversationId === excludeConversationId) continue;
-        // Cheap pre-filter: skip entries that share no token and no exact text.
-        if (e.f.norm !== q.norm && !e.f.tokens.some((t) => qTokens.has(t))) continue;
+        // Early exit: if even a perfect trigram overlap couldn't reach minScore,
+        // skip the (more expensive) trigram comparison entirely.
+        if (e.f.norm !== q.norm && minScore > 0) {
+          const cos = similarity.tfidfCosine(q.tokens, e.f.tokens, idf);
+          if (similarity.TOKEN_WEIGHT * cos + similarity.TRIGRAM_WEIGHT < minScore) continue;
+        }
         const score = similarity.scoreFeatures(q, e.f, idf);
         if (score < minScore) continue;
         const prev = best.get(e.conversationId);
@@ -174,10 +215,11 @@
         }));
     }
 
-    /** All prompts of a conversation, oldest first. */
-    promptsFor(conversationId) {
-      return [...this.entries.values()]
-        .filter((e) => e.conversationId === conversationId)
+    /** All prompts of a conversation, oldest first (chat titles excluded unless asked). */
+    promptsFor(conversationId, { includeTitles = false } = {}) {
+      return [...(this.byConversation.get(conversationId) || [])]
+        .map((id) => this.entries.get(id))
+        .filter((e) => includeTitles || e.source !== 'title')
         .sort((a, b) => a.createdAt - b.createdAt)
         .map((e) => e.prompt);
     }

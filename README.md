@@ -11,7 +11,7 @@ and clears out stale chats in a few clicks instead of one by one.
 
 [![CI](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml/badge.svg)](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4f46e5)
-![Tests](https://img.shields.io/badge/tests-131%20passing-059669)
+![Tests](https://img.shields.io/badge/tests-136%20passing-059669)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-059669)
 ![Privacy](https://img.shields.io/badge/data-stays%20on%20your%20device-7c3aed)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -172,7 +172,9 @@ Every CI run also attaches this zip as a downloadable build artifact.
 ### First run
 
 About four seconds after you open ChatGPT, Recall offers to **learn from your existing chats**. Say yes and it
-reads your recent history (up to 200 chats, politely rate-limited) so it can recognise repeats from day one.
+reads your recent history so it can recognise repeats from day one. It's quick: chat titles are learned in about a second, then the
+prompts inside up to 200 chats are read 6 at a time in the background (about 6 seconds for 200 chats in our tests). You can hide the
+progress and keep chatting.
 Say *Not now* and it will simply learn as you go. You can run the import later from the popup.
 
 <img src="docs/images/welcome-toast.png" alt="First-run prompt offering to learn from existing chats" width="700" />
@@ -240,7 +242,7 @@ flowchart LR
 ### The send hook
 
 `content.js` listens for **Enter**, **send-button clicks** and **form submits** on `window` in the *capture*
-phase, so it runs before ChatGPT's own handlers. The decision is synchronous and in-memory (a few milliseconds
+phase, so it runs before ChatGPT's own handlers. The decision is synchronous and in-memory, using an inverted index so only prompts sharing a word are scored (a few milliseconds
 even with thousands of prompts). If Recall intercepts, it calls `preventDefault()` and
 `stopImmediatePropagation()` and shows the dialog; *Ask anyway* re-clicks the real send button with a one-shot
 bypass flag. One physical send that surfaces as keydown + click + submit is handled exactly once.
@@ -266,7 +268,7 @@ The threshold was tuned on a labelled set of paraphrases and look-alikes that th
 |---|---|---|
 | Prompts you send | Always | Linked to the chat once ChatGPT assigns its id. |
 | Chats you open | If *Learn from chats I open* is on | Reads the user messages on screen. |
-| Import | When you click *Learn from my chats* | Reads up to 200 recent chats via the same endpoints the ChatGPT web app uses, ~3 requests/second. Incremental on re-runs. |
+| Import | When you click *Learn from my chats* | Two phases: titles of your recent chats are indexed instantly from one list call, then the prompts of up to 200 chats are fetched **6 in parallel** (with automatic back-off if ChatGPT rate-limits). Runs in the background, saves as it goes, and skips chats already learned on re-runs. |
 
 The index keeps up to 5,000 prompts (60 per chat, 400 characters each), evicting the oldest first. Two open
 ChatGPT tabs merge their changes instead of overwriting each other, and deletions are remembered so a stale
@@ -293,8 +295,8 @@ src/
   popup/                    popup UI
   background/               tiny service worker (install defaults)
 tests/
-  unit/                     124 Node tests for src/lib
-  e2e/                      7 real-browser tests (Chromium + the extension + a mock chat app)
+  unit/                     128 Node tests for src/lib
+  e2e/                      8 real-browser tests (Chromium + the extension + a mock chat app)
   fixtures/mock-chat.html   the mock chat app used by e2e tests and screenshots
 scripts/                    package, screenshots, icon generation
 ```
@@ -352,17 +354,17 @@ Load the folder as an unpacked extension (see [Install](#install)) and hit the â
 
 ## Testing
 
-**131 automated tests** run on every push via GitHub Actions.
+**136 automated tests** run on every push via GitHub Actions.
 
 | Suite | Count | What it covers |
 |---|---|---|
 | `tests/unit/policy.test.js` | 46 | Every redirect / no-redirect rule from the table above, rule priority ("new answer" beats an exact duplicate), snoozes, thresholds. |
 | `tests/unit/similarity.test.js` | 23 | Labelled paraphrases must match; same-template, different-topic pairs must not. |
-| `tests/unit/historyIndex.test.js` | 14 | Search ranking, IDF, caps, eviction, cross-tab merge, deletions, wipe. |
+| `tests/unit/historyIndex.test.js` | 15 | Search ranking, IDF, caps, eviction, cross-tab merge, deletions, wipe. |
 | `tests/unit/cleanup.test.js` | 10 | Each staleness signal, duplicates, protected/open chats, malformed input. |
-| `tests/unit/chatgptApi.test.js` | 9 | Paging, prompt extraction, token refresh, partial delete failures, error handling. |
+| `tests/unit/chatgptApi.test.js` | 12 | Parallel paging, concurrency limits, 429 back-off, prompt extraction, token refresh, partial delete failures. |
 | `tests/unit/store.test.js`, `settings`, `routes`, `text` | 22 | Persistence, validation, URL parsing, tokenisation. |
-| `tests/e2e/extension.test.js` | 7 | **Real Chromium with the extension loaded** against a mock chat app: redirect, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat follow-ups, *Not the same*, import, passive learning, bulk delete with confirmation, popup tester, on/off switch. |
+| `tests/e2e/extension.test.js` | 8 | **Real Chromium with the extension loaded** against a mock chat app: redirect, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat follow-ups, *Not the same*, import, passive learning, bulk delete with confirmation, popup tester, on/off switch, and a **speed test**: importing 200 chats from a deliberately slow server must finish in under 15 s. |
 
 The end-to-end tests serve a small mock chat app ([`tests/fixtures/mock-chat.html`](tests/fixtures/mock-chat.html))
 on `https://chatgpt.com` via Playwright request routing, so no real account or network is involved. To run them

@@ -201,7 +201,7 @@
       const items = o.matches.map((m, i) =>
         h('li', { class: 'match', 'data-testid': 'recall-match' },
           h('div', { class: 'title' }, m.title || 'Earlier chat'),
-          h('div', { class: 'prompt' }, `You asked: “${m.prompt}”`),
+          h('div', { class: 'prompt' }, m.source === 'title' ? 'The chat’s title matches your question' : `You asked: “${m.prompt}”`),
           h('div', { class: 'meta' }, relTime(m.createdAt)),
           h('div', { class: 'side' },
             h('span', { class: 'pct', title: 'Similarity' }, `${Math.round(m.score * 100)}% match`),
@@ -378,6 +378,45 @@
       this.toastEl = el;
       if (timeout) setTimeout(() => el.remove(), timeout);
       return el;
+    }
+
+    /**
+     * A quiet progress toast that updates in place (no re-animation) and can be
+     * hidden while the work carries on in the background.
+     * @returns {{update(msg: string, fraction?: number): void, done(msg: string): void, hidden: boolean}}
+     */
+    progress(message, { testid = 'recall-progress-toast', onHide } = {}) {
+      this.mount();
+      if (this.toastEl) this.toastEl.remove();
+      const text = h('p', {}, message);
+      const fill = h('i');
+      const handle = { hidden: false };
+      const hide = h('button', { class: 'small', 'data-testid': `${testid}-hide`, onclick: () => {
+        handle.hidden = true;
+        el.remove();
+        onHide && onHide();
+      } }, 'Hide');
+      const el = h('div', { class: 'toast', role: 'status', 'aria-live': 'polite', 'data-testid': testid },
+        h('div', { class: 'brand', html: LOGO }, 'Recall'),
+        text,
+        h('div', { class: 'bar' }, fill),
+        h('div', { class: 'row' }, hide)
+      );
+      this.layer.append(el);
+      this.toastEl = el;
+      handle.update = (msg, fraction) => {
+        if (handle.hidden) return;
+        text.textContent = msg;
+        if (fraction != null) fill.style.width = `${Math.round(fraction * 100)}%`;
+      };
+      handle.done = (msg, timeout = 6000) => {
+        if (handle.hidden) return;
+        text.textContent = msg;
+        fill.style.width = '100%';
+        hide.textContent = 'Close';
+        setTimeout(() => el.remove(), timeout);
+      };
+      return handle;
     }
 
     // ------------------------------------------------------------- launcher

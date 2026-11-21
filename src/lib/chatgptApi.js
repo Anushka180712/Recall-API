@@ -27,16 +27,43 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /**
+   * Run `fn` over `items` with at most `concurrency` in flight, preserving order.
+   * Much faster than one-at-a-time while staying gentle on the server.
+   */
+  async function mapPool(items, concurrency, fn) {
+    const results = new Array(items.length);
+    let next = 0;
+    async function worker() {
+      while (next < items.length) {
+        const i = next++;
+        results[i] = await fn(items[i], i);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker));
+    return results;
+  }
+
+  /**
    * @param {object} [opts]
    * @param {typeof fetch} [opts.fetch]
    * @param {string} [opts.origin] e.g. "https://chatgpt.com"
-   * @param {number} [opts.delayMs] pause between sequential requests (be polite)
+   * @param {number} [opts.concurrency] parallel requests for bulk reads/deletes
+   * @param {number} [opts.maxRetries] retries after HTTP 429 (rate limited)
    */
-  function createClient({ fetch: fetchImpl = globalThis.fetch, origin = '', delayMs = 350 } = {}) {
+  function createClient({ fetch: fetchImpl = globalThis.fetch, origin = '', concurrency = 6, maxRetries = 3, backoffMs = 1000 } = {}) {
     let token = null;
+    let tokenPromise = null;
 
-    async function request(path, init = {}, retry = true) {
-      if (!token) token = await getAccessToken();
+    async function ensureToken() {
+      if (token) return token;
+      // Parallel requests share one session lookup.
+      tokenPromise = tokenPromise || getAccessToken().finally(() => (tokenPromise = null));
+      token = await tokenPromise;
+      return token;
+    }
+
+    async function request(path, init = {}, retry = true, attempt = 0) {
+      await ensureToken();
       const res = await fetchImpl(origin + path, {
         credentials: 'include',
         ...init,
@@ -44,7 +71,13 @@
       });
       if (res.status === 401 && retry) {
         token = null; // token expired: fetch a fresh one once
-        return request(path, init, false);
+        return request(path, init, false, attempt);
+      }
+      if (res.status === 429 && attempt < maxRetries) {
+        // Rate limited: back off (honouring Retry-After when present) and retry.
+        const header = res.headers && res.headers.get && Number(res.headers.get('retry-after'));
+        await sleep(header > 0 ? header * 1000 : backoffMs * 2 ** attempt);
+        return request(path, init, retry, attempt + 1);
       }
       if (!res.ok) throw new ChatGPTApiError(`${init.method || 'GET'} ${path} failed (${res.status})`, res.status);
       return res.status === 204 ? null : res.json();
@@ -59,17 +92,51 @@
     }
 
     /** Pages through the chat list, newest first. */
-    async function listConversations({ limit = 300, pageSize = 50, onProgress } = {}) {
-      const out = [];
-      for (let offset = 0; out.length < limit; offset += pageSize) {
+    /**
+     * The chat list, newest first. The first page tells us the total, then the
+     * remaining pages are fetched in parallel.
+     */
+    async function listConversations({ limit = 300, pageSize = 100, onProgress } = {}) {
+      const fetchPage = async (offset) => {
         const page = await request(`/backend-api/conversations?offset=${offset}&limit=${pageSize}&order=updated`);
-        const items = (page && page.items) || [];
-        for (const it of items) out.push(normalizeConversation(it));
-        if (onProgress) onProgress(out.length, Math.min(limit, page.total ?? out.length));
-        if (items.length < pageSize || (page.total != null && out.length >= page.total)) break;
-        await sleep(delayMs);
+        return { items: ((page && page.items) || []).map(normalizeConversation), total: page && page.total };
+      };
+      const first = await fetchPage(0);
+      let out = first.items;
+      if (onProgress) onProgress(out.length, Math.min(limit, first.total ?? out.length));
+      if (first.items.length < pageSize || out.length >= limit) return out.slice(0, limit);
+
+      if (first.total != null) {
+        const offsets = [];
+        for (let off = pageSize; off < Math.min(limit, first.total); off += pageSize) offsets.push(off);
+        const pages = await mapPool(offsets, concurrency, fetchPage);
+        for (const p of pages) out = out.concat(p.items);
+      } else {
+        // Total unknown: walk pages until a short one.
+        for (let off = pageSize; out.length < limit; off += pageSize) {
+          const p = await fetchPage(off);
+          out = out.concat(p.items);
+          if (p.items.length < pageSize) break;
+        }
       }
+      if (onProgress) onProgress(Math.min(out.length, limit), Math.min(out.length, limit));
       return out.slice(0, limit);
+    }
+
+    /** Fetch many conversations in parallel; failures are reported, not thrown. */
+    async function getConversations(ids, { onProgress, onResult } = {}) {
+      let done = 0;
+      return mapPool(ids, concurrency, async (id) => {
+        let result;
+        try {
+          result = await getConversation(id);
+        } catch (err) {
+          result = { id, error: err.message, prompts: [] };
+        }
+        if (onResult) onResult(result);
+        if (onProgress) onProgress(++done, ids.length);
+        return result;
+      });
     }
 
     async function getConversation(id) {
@@ -87,25 +154,28 @@
     }
 
     /**
-     * Deletes sequentially and reports per-chat results; one failure never
+     * Deletes a few at a time and reports per-chat results; one failure never
      * aborts the rest.
      */
     async function deleteMany(ids, { onProgress } = {}) {
       const results = { deleted: [], failed: [] };
-      for (let i = 0; i < ids.length; i++) {
+      let done = 0;
+      const outcomes = await mapPool(ids, Math.min(concurrency, 3), async (id) => {
+        let ok;
         try {
-          await deleteConversation(ids[i]);
-          results.deleted.push(ids[i]);
+          await deleteConversation(id);
+          ok = true;
         } catch (err) {
-          results.failed.push({ id: ids[i], error: err.message });
+          ok = err.message;
         }
-        if (onProgress) onProgress(i + 1, ids.length);
-        if (i < ids.length - 1) await sleep(delayMs);
-      }
+        if (onProgress) onProgress(++done, ids.length);
+        return ok;
+      });
+      outcomes.forEach((ok, i) => (ok === true ? results.deleted.push(ids[i]) : results.failed.push({ id: ids[i], error: ok })));
       return results;
     }
 
-    return { listConversations, getConversation, deleteConversation, deleteMany, getAccessToken };
+    return { listConversations, getConversation, getConversations, deleteConversation, deleteMany, getAccessToken };
   }
 
   function toMs(t) {
@@ -131,5 +201,5 @@
       .filter(Boolean);
   }
 
-  return { createClient, ChatGPTApiError, extractUserPrompts, normalizeConversation, toMs };
+  return { createClient, mapPool, ChatGPTApiError, extractUserPrompts, normalizeConversation, toMs };
 });

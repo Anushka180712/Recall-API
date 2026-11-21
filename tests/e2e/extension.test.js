@@ -215,3 +215,30 @@ test('popup renders stats and the live "would Recall step in?" tester', async (t
   await page.waitForURL(/\/c\//);
   assert.equal(await recall(page, 'recall-dialog').count(), 0);
 });
+
+test('import is fast: 200 chats with a slow server finish in seconds, in parallel', async (t) => {
+  const seed = Array.from({ length: 200 }, (_, i) => ({
+    id: `bulk-${String(i).padStart(3, '0')}`,
+    title: `Topic number ${i}`,
+    prompts: [`question about topic ${i} and subject ${i * 7}`],
+    updatedDaysAgo: 1 + (i % 50),
+  }));
+  const env = await launch(seed, { latencyMs: 150 });
+  t.after(env.close);
+  const { page, server } = env;
+  await page.goto(`${ORIGIN}/`);
+  await waitForRecall(page);
+
+  await recall(page, 'recall-welcome').waitFor({ timeout: 5000 });
+  const started = Date.now();
+  await recall(page, 'recall-welcome').locator('button', { hasText: 'Learn from my chats' }).click();
+  await recall(page, 'recall-import').filter({ hasText: 'Done' }).waitFor({ timeout: 30000 });
+  const seconds = (Date.now() - started) / 1000;
+
+  if (process.env.RECALL_VERBOSE) console.log(`import: ${seconds.toFixed(1)} s, peak ${server.peakInFlight} parallel requests`);
+  // One-at-a-time with a pause (the old behaviour) would take ~90 s here.
+  assert.ok(seconds < 15, `import took ${seconds.toFixed(1)} s`);
+  assert.ok(server.peakInFlight > 1, 'chats are fetched in parallel');
+  assert.ok(server.peakInFlight <= 7, `stays polite (peak ${server.peakInFlight} requests)`);
+  assert.match(await recall(page, 'recall-import').innerText(), /from 200 chats/);
+});

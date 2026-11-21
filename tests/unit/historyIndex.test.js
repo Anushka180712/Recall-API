@@ -66,8 +66,8 @@ test('df bookkeeping stays consistent after removals', () => {
   idx.add({ conversationId: 'a', prompt: 'alpha beta gamma' });
   idx.add({ conversationId: 'b', prompt: 'alpha delta' });
   idx.removeConversation('a');
-  assert.equal(idx.df.get('alpha'), 1);
-  assert.equal(idx.df.has('gamma'), false);
+  assert.equal(idx.docFreq('alpha'), 1);
+  assert.equal(idx.postings.has('gamma'), false);
 });
 
 test('global cap evicts the oldest prompts', () => {
@@ -113,4 +113,12 @@ test('merge honours a newer "clear" from another tab', () => {
 test('fromJSON ignores unknown schema versions', () => {
   assert.equal(HistoryIndex.fromJSON({ v: 999, e: [['a', 'hello world there', 1, 'sent']] }).size, 0);
   assert.equal(HistoryIndex.fromJSON(null).size, 0);
+});
+
+test('chat titles are searchable but not counted as prompts', () => {
+  const idx = new HistoryIndex();
+  idx.add({ conversationId: 'a', prompt: 'Docker volumes vs bind mounts', source: 'title' });
+  assert.deepEqual(idx.promptsFor('a'), []);
+  assert.deepEqual(idx.promptsFor('a', { includeTitles: true }), ['Docker volumes vs bind mounts']);
+  assert.equal(idx.search('docker volumes vs bind mounts', { minScore: 0.7 })[0].source, 'title');
 });

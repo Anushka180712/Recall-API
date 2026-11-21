@@ -17,6 +17,7 @@
   const DEBUG = false;
   const log = (...a) => DEBUG && console.debug('[Recall]', ...a);
 
+  const UNTITLED_RE = /^(?:new chat|untitled|new conversation)$/i;
   const store = storeMod.createStore();
   const api = chatgptApi.createClient({ origin: location.origin });
   const overlay = new globalThis.RecallOverlay();
@@ -50,7 +51,7 @@
     overlay.setLauncher(state.settings.enabled && state.settings.showLauncher, openCleanup);
     observeConversation();
     setInterval(checkUrl, 400);
-    setTimeout(firstRunAndNudges, 4000);
+    setTimeout(firstRunAndNudges, 1500);
     log('ready', state.index.stats());
   }
 
@@ -251,38 +252,66 @@
   });
 
   // ----------------------------------------------------------------- import
+  /**
+   * Learn from existing history. Built to feel instant:
+   *   1. one quick call lists recent chats and their titles are indexed at once,
+   *      so Recall is useful within a second or two;
+   *   2. the prompts inside each chat are then fetched several at a time in the
+   *      background (you can hide the progress and keep chatting);
+   *   3. it's incremental: chats already learned and unchanged are skipped, and
+   *      progress is saved as it goes, so a closed tab resumes where it stopped.
+   */
   async function importHistory({ limit = 200 } = {}) {
     if (state.importing) return { skipped: true };
     state.importing = true;
-    const toast = (msg, actions, opts) => overlay.toast(msg, actions, { testid: 'recall-import', ...opts });
+    const ui = overlay.progress('Reading your chat list…', { testid: 'recall-import' });
     try {
-      toast('Reading your chat list…');
-      const convs = await api.listConversations({ limit });
-      const todo = convs.filter((c) => {
+      const convs = await listConversationsCached({ limit, fresh: true });
+
+      // Phase 1: titles, instantly.
+      const todo = [];
+      for (const c of convs) {
         const known = state.index.conversations.get(c.id);
+        const hasPrompts = state.index.promptsFor(c.id).length > 0;
         state.index.touchConversation(c.id, c.title, c.updatedAt);
-        return !known || state.index.promptsFor(c.id).length === 0 || (known.updatedAt || 0) < c.updatedAt;
-      });
-      let added = 0;
-      for (let i = 0; i < todo.length; i++) {
-        toast(`Learning from your chats… ${i + 1} / ${todo.length}`);
-        try {
-          const full = await api.getConversation(todo[i].id);
-          for (const p of full.prompts) {
-            if (state.index.add({ conversationId: todo[i].id, prompt: p, createdAt: todo[i].createdAt, title: todo[i].title, source: 'imported' })) added++;
-          }
-        } catch (err) {
-          log('skip', todo[i].id, err.message);
+        if (c.title && !UNTITLED_RE.test(c.title)) {
+          state.index.add({ conversationId: c.id, prompt: c.title, createdAt: c.createdAt, title: c.title, source: 'title' });
         }
-        await new Promise((r) => setTimeout(r, 300));
+        if (!hasPrompts || !known || (known.updatedAt || 0) < c.updatedAt) todo.push(c);
+      }
+      scheduleSave();
+
+      // Phase 2: prompts, in parallel, indexed as each chat arrives.
+      let added = 0;
+      let lastPaint = 0;
+      const meta = new Map(todo.map((c) => [c.id, c]));
+      if (todo.length) {
+        ui.update(`Recall can already spot repeats. Reading ${todo.length} chats for more detail… (you can keep chatting)`, 0.05);
+        await api.getConversations(todo.map((c) => c.id), {
+          onResult: (full) => {
+            if (full.error) return log('skip', full.id, full.error);
+            const c = meta.get(full.id);
+            for (const p of full.prompts) {
+              if (state.index.add({ conversationId: c.id, prompt: p, createdAt: c.createdAt, title: c.title, source: 'imported' })) added++;
+            }
+          },
+          onProgress: (done, total) => {
+            const now = Date.now();
+            if (now - lastPaint > 300 || done === total) {
+              lastPaint = now;
+              ui.update(`Learning from your chats… ${done} of ${total} (you can keep chatting)`, 0.05 + 0.95 * (done / total));
+            }
+            if (done % 25 === 0) scheduleSave();
+          },
+        });
       }
       await store.saveIndex(state.index);
       await store.setMeta({ lastImportAt: Date.now() });
       const s = state.index.stats();
-      toast(`Done. Recall now knows ${s.prompts} prompts from ${s.conversations} chats (${added} new).`, [], { timeout: 6000 });
+      ui.done(`Done. Recall now knows ${s.prompts} prompts from ${s.conversations} chats (${added} new).`);
       return { added, ...s };
     } catch (err) {
-      toast(`Import didn’t work (${err.message}). Recall still learns from chats you send and open.`, [], { timeout: 8000 });
+      ui.done(`Import didn’t work (${err.message}). Recall still learns from chats you send and open.`, 8000);
       return { error: err.message };
     } finally {
       state.importing = false;
@@ -290,13 +319,24 @@
   }
 
   // ---------------------------------------------------------------- cleanup
+  /** The chat list is reused for 2 minutes (nudge -> cleanup panel -> reopen). */
+  const listCache = { at: 0, limit: 0, data: null };
+  async function listConversationsCached({ limit, fresh = false }) {
+    if (!fresh && listCache.data && listCache.limit >= limit && Date.now() - listCache.at < 120000) {
+      return listCache.data.slice(0, limit);
+    }
+    const data = await api.listConversations({ limit });
+    Object.assign(listCache, { at: Date.now(), limit, data });
+    return data;
+  }
+
   async function loadCleanup() {
     const [protectedIds, settings] = [await store.getProtected(), state.settings];
     let conversations;
     let canDelete = true;
     let note = '';
     try {
-      conversations = await api.listConversations({ limit: 300 });
+      conversations = await listConversationsCached({ limit: 300 });
     } catch (err) {
       conversations = dom.sidebarConversations(routes.conversationId);
       canDelete = false;
@@ -318,6 +358,7 @@
       onKeep: (ids) => store.protect(ids),
       onDelete: async (ids, onProgress) => {
         const res = await api.deleteMany(ids, { onProgress });
+        listCache.data = null; // the list changed
         for (const id of res.deleted) state.index.removeConversation(id);
         state.removed.push(...res.deleted);
         await store.saveIndex(state.index, { removedConversations: state.removed.splice(0) });
@@ -341,7 +382,7 @@
     if (!meta.importOffered) {
       await store.setMeta({ importOffered: true, lastNudgeAt: now });
       overlay.toast(
-        'Recall can learn from your existing chats so it spots questions you’ve already asked. Everything stays on this device.',
+        'Recall can learn from your existing chats so it spots questions you’ve already asked. It takes a few seconds, runs in the background, and everything stays on this device.',
         [
           { label: 'Not now' },
           { label: 'Learn from my chats', primary: true, onClick: () => importHistory() },
