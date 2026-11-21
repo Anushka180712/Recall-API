@@ -73,7 +73,23 @@
         const data = await res.json();
         document.title = data.title || 'Mock chat';
         const msgs = Object.values(data.mapping).map((n) => n.message).sort((a, b) => a.create_time - b.create_time);
-        for (const m of msgs) addMsg(m.author.role, m.content.parts.join('\n'));
+        // Like the real app: render the newest turns first, older ones a moment
+        // later, then jump to the bottom (twice, as layout settles).
+        const cut = Math.max(0, msgs.length - 6);
+        for (const m of msgs.slice(cut)) addMsg(m.author.role, m.content.parts.join('\n'));
+        thread.scrollTop = thread.scrollHeight;
+        setTimeout(() => {
+          const first = thread.firstChild;
+          for (const m of msgs.slice(0, cut)) {
+            const d = document.createElement('div');
+            d.className = 'msg';
+            d.dataset.messageAuthorRole = m.author.role;
+            d.textContent = m.content.parts.join('\n');
+            thread.insertBefore(d, first);
+          }
+          thread.scrollTop = thread.scrollHeight;
+        }, 400);
+        setTimeout(() => (thread.scrollTop = thread.scrollHeight), 1100);
       }
 
       async function send() {

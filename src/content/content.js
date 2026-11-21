@@ -121,6 +121,7 @@
       conversationId: routes.conversationId(location.href),
       temporaryChat: routes.isTemporaryChat(location.href),
       hasAttachments: dom.hasAttachments(),
+      visiblePrompts: routes.conversationId(location.href) ? dom.visibleUserPrompts() : [],
       isSnoozed: (norm, convId) => (s[`${globalThis.Recall.text.hash(norm)}:${convId}`] || 0) > Date.now(),
     };
   }
@@ -277,6 +278,17 @@
    * ChatGPT's in-app navigation.
    */
   function openAndJump(m) {
+    if (m.sameChat) {
+      // Already here: clear the repeated draft and scroll up to the earlier answer.
+      clearComposer();
+      try {
+        sessionStorage.setItem(JUMP_KEY, JSON.stringify({ id: m.conversationId, prompt: m.prompt, at: Date.now() }));
+      } catch {
+        /* ignore */
+      }
+      jumpToTarget();
+      return;
+    }
     try {
       sessionStorage.setItem(JUMP_KEY, JSON.stringify({ id: m.conversationId, prompt: m.prompt, title: m.source === 'title', at: Date.now() }));
     } catch {
@@ -291,7 +303,31 @@
     }, 1500);
   }
 
+  function clearComposer() {
+    const c = dom.composer();
+    if (!c) return;
+    c.focus();
+    if ('value' in c && typeof c.value === 'string') c.value = '';
+    else {
+      // Select all + delete keeps ProseMirror's own state in sync.
+      document.execCommand('selectAll', false);
+      document.execCommand('delete', false);
+    }
+    c.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
   let jumpTimer = 0;
+  /**
+   * Scroll to the remembered message once the chat has rendered.
+   *
+   * ChatGPT renders a chat in several passes and then scrolls itself to the
+   * newest message, which would undo a naive scroll. So we:
+   *   1. wait until the list of messages stops changing,
+   *   2. find the best match (exact text first), scrolling the chat to the top
+   *      to make older turns render if it isn't there yet,
+   *   3. scroll to it and keep it in view for a few seconds, unless you start
+   *      scrolling yourself.
+   */
   function jumpToTarget() {
     let target;
     try {
@@ -302,32 +338,86 @@
     if (!target || Date.now() - target.at > 30000) return;
     if (routes.conversationId(location.href) !== target.id) return;
     clearInterval(jumpTimer);
+
     const started = Date.now();
+    let lastCount = -1;
+    let stableSince = Date.now();
+    let loadAttempts = 0;
     jumpTimer = setInterval(() => {
-      const els = [...document.querySelectorAll(dom.SELECTORS.userMessage.join(','))];
-      if (!els.length && Date.now() - started < 12000) return; // chat still loading
+      const els = userMessageEls();
+      const timedOut = Date.now() - started > 15000;
+      if (els.length !== lastCount) {
+        lastCount = els.length;
+        stableSince = Date.now();
+        if (!timedOut) return;
+      }
+      if (!timedOut && (!els.length || Date.now() - stableSince < 700)) return; // still rendering
+
+      const match = els.length && !target.title ? bestMessage(els, target.prompt) : null;
+      if (match && match.score < 0.6 && loadAttempts < 3 && !timedOut) {
+        // Not rendered yet: scroll the chat to the top so older turns load.
+        const box = scrollParent(els[0]);
+        if (box) box.scrollTop = 0;
+        loadAttempts++;
+        stableSince = Date.now();
+        return;
+      }
       clearInterval(jumpTimer);
-      sessionStorage.removeItem(JUMP_KEY);
+      try {
+        sessionStorage.removeItem(JUMP_KEY);
+      } catch {
+        /* ignore */
+      }
       highlightSidebar(target.id);
-      if (!els.length || target.title) return;
-      const el = bestMessage(els, target.prompt);
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      flash(el, 'recall-jump-target');
-    }, 250);
+      if (match) reveal(match.el);
+    }, 200);
   }
 
-  /** The rendered user message that best matches the remembered prompt. */
+  function userMessageEls() {
+    return [...document.querySelectorAll(dom.SELECTORS.userMessage.join(','))];
+  }
+
+  /** The rendered user message that best matches a prompt: {el, score}. */
   function bestMessage(els, prompt) {
     const { normalize } = globalThis.Recall.text;
     const want = normalize(prompt);
-    let best = els[0];
-    let bestScore = -1;
+    let best = { el: els[0], score: -1 };
     for (const el of els) {
       const got = normalize(el.innerText || el.textContent || '');
-      const score = got === want || got.startsWith(want) ? 2 : globalThis.Recall.similarity.score(got.slice(0, 400), want);
-      if (score > bestScore) [best, bestScore] = [el, score];
+      const score = got === want || (want.length > 20 && got.startsWith(want)) ? 2 : globalThis.Recall.similarity.score(got.slice(0, 400), want);
+      // Prefer the earliest message on ties: that's where it was first answered.
+      if (score > best.score) best = { el, score };
     }
     return best;
+  }
+
+  function scrollParent(el) {
+    for (let n = el && el.parentElement; n; n = n.parentElement) {
+      const oy = getComputedStyle(n).overflowY;
+      if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n;
+    }
+    return document.scrollingElement;
+  }
+
+  function inView(el) {
+    const r = el.getBoundingClientRect();
+    return r.bottom > 0 && r.top < window.innerHeight && r.top > -r.height / 2;
+  }
+
+  /** Scroll a message to the top of the view, highlight it, and hold it there briefly. */
+  function reveal(el) {
+    let userScrolled = false;
+    const stop = () => (userScrolled = true);
+    const opts = { passive: true, capture: true, once: true };
+    for (const type of ['wheel', 'touchmove', 'mousedown']) window.addEventListener(type, stop, opts);
+    const go = () => !userScrolled && el.isConnected && el.scrollIntoView({ block: 'start', behavior: 'auto' });
+    go();
+    flash(el, 'recall-jump-target', 4000);
+    // ChatGPT scrolls to the newest message after loading; put ours back.
+    for (const ms of [250, 600, 1200, 2000, 3000]) setTimeout(() => !inView(el) && go(), ms);
+    setTimeout(() => {
+      for (const type of ['wheel', 'touchmove', 'mousedown']) window.removeEventListener(type, stop, opts);
+    }, 3500);
   }
 
   function highlightSidebar(id) {
@@ -338,7 +428,7 @@
   }
 
   /** Briefly outline an element of the page (inline styles, restored afterwards). */
-  function flash(el, marker) {
+  function flash(el, marker, ms = 2800) {
     const prev = { outline: el.style.outline, outlineOffset: el.style.outlineOffset, transition: el.style.transition, boxShadow: el.style.boxShadow };
     el.setAttribute('data-recall-highlight', marker);
     Object.assign(el.style, {
@@ -350,7 +440,7 @@
     setTimeout(() => {
       Object.assign(el.style, prev);
       el.removeAttribute('data-recall-highlight');
-    }, 2800);
+    }, ms);
   }
 
   let scrapeTimer = 0;

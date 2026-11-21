@@ -11,7 +11,7 @@ and clears out stale chats in a few clicks instead of one by one.
 
 [![CI](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml/badge.svg)](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4f46e5)
-![Tests](https://img.shields.io/badge/tests-146%20passing-059669)
+![Tests](https://img.shields.io/badge/tests-149%20passing-059669)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-059669)
 ![Privacy](https://img.shields.io/badge/data-stays%20on%20your%20device-7c3aed)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -58,7 +58,7 @@ finding things hard in the first place, Recall also offers to **clean those up i
 |---|---|
 | 🔁 **Repeat detection** | Catches re-phrased questions, not just copy-pastes ("reverse linked list python" ≈ "How do I reverse a linked list in Python?"). |
 | ↩️ **Redirect, don't re-ask** | Shows up to 3 earlier chats with a similarity score, the prompt you asked back then and when. *Take me there* opens it, **scrolls straight to the message you asked** and highlights it (and the chat in the sidebar). |
-| 🧠 **Knows when *not* to interrupt** | 13 explicit rules: never for "generate a new one", small talk, time-sensitive questions, follow-ups, attachments, temporary chats and more ([full list](#when-does-recall-step-in-and-when-doesnt-it)). |
+| 🧠 **Knows when *not* to interrupt** | 12 explicit rules: never for "generate a new one", small talk, time-sensitive questions, follow-ups, attachments, temporary chats and more ([full list](#when-does-recall-step-in-and-when-doesnt-it)). |
 | ✋ **You are always in control** | *Ask anyway*, *Not the same* (never suggests that chat for that question again), or *Keep editing*. Keyboard shortcuts `O` / `A` / `Esc`. |
 | 🧹 **Bulk cleanup** | Finds untitled, greeting-only, duplicate and long-abandoned chats, explains why for each, and deletes the ones you tick, after a confirmation. |
 | 🔔 **Gentle nudges** | At most once a week (configurable), and only if there are enough stale chats to bother: "You have 14 chats that look stale. Review?" |
@@ -85,14 +85,16 @@ flowchart TD
     E -- yes --> SEND
     E -- no --> F{Similar earlier prompt<br/>≥ threshold?}
     F -- no --> SEND
-    F -- yes --> G{In a different chat<br/>than the one you're in?<br/>not marked 'Not the same'?}
-    G -- no --> SEND
-    G -- yes --> R([Pause and suggest the earlier chat])
+    F -- yes --> G{Where was it asked?<br/>not marked 'Not the same'?}
+    G -- marked 'Not the same' --> SEND
+    G -- another chat --> R([Pause and suggest the earlier chat])
+    G -- this same chat --> H([Pause and offer to scroll to the earlier answer])
 ```
 
 ### ✅ Recall suggests a redirect when **all** of these are true
 
-1. You're about to send a standalone question from a **new chat or a different chat**.
+1. You're about to send a question you already asked, **in another chat or earlier in this same chat**. In the same
+   chat, Recall offers **Show me the answer**, which scrolls up to it, instead of generating it again.
 2. An earlier prompt of yours is at least **70 % similar** (the *Balanced* preset; *Loose* = 60 %, *Strict* = 82 %).
 3. None of the "don't interrupt" rules below applies.
 
@@ -111,13 +113,12 @@ flowchart TD
 | 9 | It needs **up-to-date information**, so an old answer could be stale | "**latest** iPhone", "news **today**", "weather", "stock price", "best laptops **in 2026**". Everyday words like "current", "still" or "next month" do **not** count | `needs-fresh-info` |
 | 10 | It contains **pasted code or a long document** (unique input) | anything with ```` ``` ```` or > 1,500 chars | `pasted-content` |
 | 11 | Nothing earlier is **similar enough** | | `no-match` |
-| 12 | The only similar question is **in the chat you're already in** (that's a follow-up, not a repeat) | | `same-conversation` |
-| 13 | You said **"Not the same"** for that chat and this question (remembered for 30 days) | | `snoozed` |
+| 12 | You said **"Not the same"** for that chat and this question (remembered for 30 days) | | `snoozed` |
 
 > **Exact copies always count.** If you paste the exact text of something you asked in another chat (ignoring case and
 > punctuation, however long it is), Recall offers that chat even if rules 7 to 10 would normally stay quiet. Only an
-> explicit request for a new answer, small talk, attachments, temporary chats, the current chat, or switching Recall off
-> beat an exact copy.
+> explicit request for a new answer, small talk, attachments, temporary chats, or switching Recall off beat an exact
+> copy. (Inside the same chat, short follow-ups like "make it shorter" can be repeated freely.)
 
 > **Tip:** start or end a prompt with "again", "new", "fresh take", or "ask anyway" to skip Recall for that
 > one message, no clicks needed.
@@ -191,6 +192,7 @@ Just use ChatGPT. When you're about to repeat yourself, Recall pauses the send a
 | Action | What happens | Shortcut |
 |---|---|---|
 | **Take me there** / **Open chat** | Opens the earlier conversation, scrolls to the matching message and highlights it for a moment. Your message is *not* sent. | `O` |
+| **Show me the answer** (same chat) | Scrolls up to where you asked it before in this chat, highlights it, and clears the repeated draft. Nothing is sent. | `O` |
 | **Ask anyway** | Sends your message right now, exactly as typed. | `A` |
 | **Not the same** | Never suggests that chat for this question again (for 30 days), then continues. | |
 | **Keep editing** | Closes the dialog and puts you back in the message box. Nothing is sent. | `Esc` |
@@ -230,7 +232,7 @@ flowchart LR
     end
     subgraph Core["src/lib (pure, unit-tested)"]
         direction TB
-        P["policy.js<br/>13 rules"] --> IDX["historyIndex.js<br/>TF-IDF index"]
+        P["policy.js<br/>the rules"] --> IDX["historyIndex.js<br/>TF-IDF index"]
         IDX --> SIM["similarity.js<br/>cosine + trigrams"] --> TXT["text.js<br/>normalise, stem, synonyms"]
         CL["cleanup.js<br/>staleness scoring"]
         API["chatgptApi.js<br/>list / read / delete"]
@@ -300,8 +302,8 @@ src/
   popup/                    popup UI
   background/               tiny service worker (install defaults)
 tests/
-  unit/                     134 Node tests for src/lib
-  e2e/                      12 real-browser tests (Chromium + the extension + a mock chat app)
+  unit/                     136 Node tests for src/lib
+  e2e/                      13 real-browser tests (Chromium + the extension + a mock chat app)
   fixtures/mock-chat.html   the mock chat app used by e2e tests and screenshots
 scripts/                    package, screenshots, icon generation
 ```
@@ -360,17 +362,17 @@ Load the folder as an unpacked extension (see [Install](#install)) and hit the �
 
 ## Testing
 
-**146 automated tests** run on every push via GitHub Actions.
+**149 automated tests** run on every push via GitHub Actions.
 
 | Suite | Count | What it covers |
 |---|---|---|
-| `tests/unit/policy.test.js` | 50 | Every redirect / no-redirect rule from the table above, exact copies (including very long ones), rule priority ("new answer" beats an exact duplicate), snoozes, thresholds. |
+| `tests/unit/policy.test.js` | 52 | Every redirect / no-redirect rule from the table above, exact copies (including very long ones), rule priority ("new answer" beats an exact duplicate), snoozes, thresholds. |
 | `tests/unit/similarity.test.js` | 23 | Labelled paraphrases must match; same-template, different-topic pairs must not. |
 | `tests/unit/historyIndex.test.js` | 16 | Search ranking, IDF, caps, eviction, cross-tab merge, deletions, wipe. |
 | `tests/unit/cleanup.test.js` | 10 | Each staleness signal, duplicates, protected/open chats, malformed input. |
 | `tests/unit/chatgptApi.test.js` | 13 | Parallel paging, concurrency limits, 429 back-off, prompt extraction, token refresh, partial delete failures, clear error messages, already-deleted chats. |
 | `tests/unit/store.test.js`, `settings`, `routes`, `text` | 22 | Persistence, validation, URL parsing, tokenisation. |
-| `tests/e2e/extension.test.js` | 12 | **Real Chromium with the extension loaded** against a mock chat app: redirect, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat follow-ups, *Not the same*, import, passive learning, bulk delete with confirmation, popup tester and *Last message* explanation, on/off switch, an exact pasted copy of a long opening prompt, *Take me there* scrolling to the right message, ChatGPT refusing a delete, reloading the extension mid-session, and a **speed test**: importing 200 chats from a deliberately slow server must finish in under 15 s. |
+| `tests/e2e/extension.test.js` | 13 | **Real Chromium with the extension loaded** against a mock chat app: redirect, Ask anyway, Esc, explicit "new answer", small talk, fresh info, repeats inside the same chat, *Not the same*, import, passive learning, bulk delete with confirmation, popup tester and *Last message* explanation, on/off switch, an exact pasted copy of a long opening prompt, *Take me there* scrolling to the right message even though the page (like ChatGPT) renders older messages late and jumps to the bottom, ChatGPT refusing a delete, reloading the extension mid-session, and a **speed test**: importing 200 chats from a deliberately slow server must finish in under 15 s. |
 
 The end-to-end tests serve a small mock chat app ([`tests/fixtures/mock-chat.html`](tests/fixtures/mock-chat.html))
 on `https://chatgpt.com` via Playwright request routing, so no real account or network is involved. To run them

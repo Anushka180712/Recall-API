@@ -88,9 +88,25 @@ for (const [prompt, reason] of NOT) {
   });
 }
 
-test('does NOT redirect when the only match is the chat you are already in', () => {
+test('STOPS a repeat inside the same chat and points at the earlier answer there', () => {
   const d = run('reverse a linked list in python', { conversationId: 'c-linked-list' });
-  assert.equal(d.reason, REASONS.SAME_CONVERSATION);
+  assert.equal(d.reason, REASONS.REPEAT_IN_THIS_CHAT);
+  assert.equal(d.intercept, true);
+  assert.equal(d.matches[0].conversationId, 'c-linked-list');
+  assert.equal(d.matches[0].sameChat, true);
+});
+
+test('same-chat repeats are also caught from the messages on screen (even if not indexed yet)', () => {
+  const d = evaluate('How can I center a div using CSS?', { conversationId: 'fresh', visiblePrompts: ['how do I center a div in css', 'thanks'] }, new HistoryIndex(), S);
+  assert.equal(d.reason, REASONS.REPEAT_IN_THIS_CHAT);
+  assert.equal(d.matches[0].prompt, 'how do I center a div in css');
+});
+
+test('same chat: asking for a new answer, or repeating a short follow-up, still sends', () => {
+  const ctx = { conversationId: 'c-linked-list', visiblePrompts: ['How do I reverse a linked list in Python?', 'make it shorter'] };
+  assert.equal(run('reverse a linked list in python, give me a new answer', ctx).reason, REASONS.WANTS_NEW_ANSWER);
+  assert.equal(run('make it shorter', ctx).reason, REASONS.CONTEXTUAL_FOLLOWUP);
+  assert.equal(run('continue', ctx).reason, REASONS.GENERIC);
 });
 
 test('does NOT redirect right after "Ask anyway" (bypass)', () => {
@@ -196,9 +212,9 @@ test('REDIRECTS: everyday words like "current", "still", "next month" no longer 
   }
 });
 
-test('does NOT redirect an exact copy when you ask for a new answer, or in the same chat', () => {
+test('does NOT redirect an exact copy when you ask for a new answer, or for small talk', () => {
   const p = 'write a poem about the ocean at night';
   assert.equal(evaluate(`${p} again`, {}, indexWith(`${p} again`), S).reason, REASONS.WANTS_NEW_ANSWER);
-  assert.equal(evaluate(p, { conversationId: 'old-chat' }, indexWith(p), S).reason, REASONS.SAME_CONVERSATION);
+  assert.equal(evaluate(`${p}, a different one`, { conversationId: 'old-chat' }, indexWith(p), S).reason, REASONS.WANTS_NEW_ANSWER);
   assert.equal(evaluate('hello there', {}, indexWith('hello there'), S).reason, REASONS.GENERIC);
 });

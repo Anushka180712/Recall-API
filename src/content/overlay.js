@@ -198,7 +198,14 @@
         fn && fn(arg);
       };
       const top = o.matches[0];
-      const items = o.matches.map((m, i) =>
+      const here = !!(top && top.sameChat);
+      const items = here
+        ? [h('li', { class: 'match', 'data-testid': 'recall-match' },
+            h('div', { class: 'title' }, 'Earlier in this chat'),
+            h('div', { class: 'prompt' }, `You asked: “${top.prompt}”`),
+            h('div', { class: 'meta' }, ''),
+            h('div', { class: 'side' }, h('span', { class: 'pct' }, `${Math.round(top.score * 100)}% match`)))]
+        : o.matches.map((m, i) =>
         h('li', { class: 'match', 'data-testid': 'recall-match' },
           h('div', { class: 'title' }, m.title || 'Earlier chat'),
           h('div', { class: 'prompt' }, m.source === 'title' ? 'The chat’s title matches your question' : `You asked: “${m.prompt}”`),
@@ -217,15 +224,17 @@
 
       const card = h('div', { class: 'card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'recall-title', tabindex: '-1', 'data-testid': 'recall-dialog' },
         h('div', { class: 'brand', html: LOGO }, 'Recall'),
-        h('h2', { id: 'recall-title' }, o.matches.length > 1 ? 'You’ve asked this before' : 'You already asked this'),
-        h('p', {}, 'Jump back to the earlier answer instead of starting over, or ask again for a new one.'),
+        h('h2', { id: 'recall-title' }, here ? 'You already asked this in this chat' : o.matches.length > 1 ? 'You’ve asked this before' : 'You already asked this'),
+        h('p', {}, here
+          ? 'The answer is already above. Jump to it, or ask again if you want a new one.'
+          : 'Jump back to the earlier answer instead of starting over, or ask again for a new one.'),
         h('div', { class: 'you' }, o.prompt),
         h('ul', { class: 'matches' }, items),
         h('div', { class: 'row split' },
           h('button', { class: 'link', onclick: done(o.onCancel), 'data-testid': 'recall-cancel' }, 'Keep editing'),
           h('div', { class: 'row' },
             h('button', { onclick: done(o.onAskAnyway), 'data-testid': 'recall-ask-anyway' }, 'Ask anyway'),
-            h('button', { class: 'primary', onclick: done(o.onOpen, top), 'data-testid': 'recall-open-top' }, 'Take me there')
+            h('button', { class: 'primary', onclick: done(o.onOpen, top), 'data-testid': 'recall-open-top' }, here ? 'Show me the answer' : 'Take me there')
           )
         ),
         h('div', { class: 'hint' }, h('kbd', {}, 'O'), ' open  ·  ', h('kbd', {}, 'A'), ' ask anyway  ·  ', h('kbd', {}, 'Esc'), ' keep editing')

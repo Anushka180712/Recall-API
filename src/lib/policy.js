@@ -8,9 +8,9 @@
  * step in?").
  */
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('./text.js'));
-  else root.RecallDefine('policy', ['text'], factory);
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (text) {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./text.js'), require('./similarity.js'));
+  else root.RecallDefine('policy', ['text', 'similarity'], factory);
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (text, similarity) {
   'use strict';
 
   /** Every possible decision. `intercept: true` only for MATCH. */
@@ -28,7 +28,7 @@
     PASTED_CONTENT: 'pasted-content',
     SNOOZED: 'snoozed',
     NO_MATCH: 'no-match',
-    SAME_CONVERSATION: 'same-conversation',
+    REPEAT_IN_THIS_CHAT: 'repeat-in-this-chat',
     MATCH: 'match',
   });
 
@@ -46,7 +46,7 @@
     [REASONS.PASTED_CONTENT]: 'The prompt contains pasted code or a long document, so it is unique input.',
     [REASONS.SNOOZED]: 'You said this suggestion was not helpful for this prompt.',
     [REASONS.NO_MATCH]: 'No earlier chat is similar enough.',
-    [REASONS.SAME_CONVERSATION]: 'The only similar question is in the chat you are already in.',
+    [REASONS.REPEAT_IN_THIS_CHAT]: 'You already asked this earlier in this same chat.',
     [REASONS.MATCH]: 'You asked this before.',
   });
 
@@ -182,30 +182,48 @@
    */
   function evaluate(prompt, ctx, index, settings = {}) {
     ctx = ctx || {};
+    const here = ctx.conversationId || null;
+    const norm = text.normalize(prompt);
+    const threshold = settings.threshold ?? 0.7;
+    const notSnoozed = (m) => !(ctx.isSnoozed && ctx.isSnoozed(norm, m.conversationId));
+
     const pre = precheck(prompt, ctx, settings);
     let all;
     if (pre) {
+      // Exact copies of something asked in *another* chat override the
+      // content rules. (In the same chat, repeating "make it shorter" is a
+      // normal follow-up, so no override there.)
       if (!EXACT_OVERRIDES.has(pre) || !index) return decision(pre);
-      all = index.search(prompt, { topK: 6, minScore: 1 }).filter((m) => m.exact);
+      all = index.search(prompt, { topK: 6, minScore: 1 }).filter((m) => m.exact && m.conversationId !== here);
       if (!all.length) return decision(pre);
     }
 
-    const threshold = settings.threshold ?? 0.7;
     all = all || (index ? index.search(prompt, { topK: 6, minScore: threshold }) : []);
-    if (!all.length) return decision(REASONS.NO_MATCH);
 
-    const norm = text.normalize(prompt);
-    const others = all.filter((m) => !ctx.conversationId || m.conversationId !== ctx.conversationId);
-    if (!others.length) return decision(REASONS.SAME_CONVERSATION);
+    // Repeating a question that is already in the open chat: point at the
+    // earlier answer right here instead of generating it again.
+    if (here && !pre) {
+      const sameChat = all.filter((m) => m.conversationId === here);
+      for (const p of ctx.visiblePrompts || []) {
+        const score = p && similarity.score(p, prompt);
+        if (score >= threshold) sameChat.push({ conversationId: here, prompt: p, score, title: '', createdAt: 0, sameChat: true });
+      }
+      const live = sameChat.filter(notSnoozed).sort((a, b) => b.score - a.score);
+      if (live.length) return decision(REASONS.REPEAT_IN_THIS_CHAT, [{ ...live[0], sameChat: true }]);
+    }
 
-    const live = others.filter((m) => !(ctx.isSnoozed && ctx.isSnoozed(norm, m.conversationId)));
+    const others = all.filter((m) => m.conversationId !== here);
+    if (!others.length) return decision(REASONS.NO_MATCH);
+
+    const live = others.filter(notSnoozed);
     if (!live.length) return decision(REASONS.SNOOZED);
 
     return decision(REASONS.MATCH, live.slice(0, settings.maxSuggestions ?? 3));
   }
 
   function decision(reason, matches = []) {
-    return { intercept: reason === REASONS.MATCH, reason, explanation: HUMAN[reason], matches };
+    const intercept = reason === REASONS.MATCH || reason === REASONS.REPEAT_IN_THIS_CHAT;
+    return { intercept, reason, explanation: HUMAN[reason], matches };
   }
 
   return { REASONS, HUMAN, GENERIC_RE, WANTS_NEW_RE, FRESH_RE, CONTEXTUAL_RE, precheck, evaluate };

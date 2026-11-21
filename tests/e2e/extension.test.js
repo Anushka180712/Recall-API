@@ -69,7 +69,7 @@ test('"Ask anyway" sends the prompt; Esc keeps editing without sending', async (
   assert.equal(server.sends[1].text, 'what is the difference between udp and tcp');
 });
 
-test('does not interrupt: explicit "new answer", small talk, fresh info, follow-ups in the same chat', async (t) => {
+test('does not interrupt: explicit "new answer", small talk, fresh info, "again" in the same chat', async (t) => {
   const env = await launch();
   t.after(env.close);
   const { page, server } = env;
@@ -90,12 +90,13 @@ test('does not interrupt: explicit "new answer", small talk, fresh info, follow-
     assert.equal(await recall(page, 'recall-dialog').count(), 0);
   }
 
-  // Asking the same thing again *inside* the original chat is a follow-up, not a repeat.
+  // Explicitly asking for a new answer inside the original chat goes straight through.
   const original = server.sends[0].conversationId;
   await page.goto(`${ORIGIN}/c/${original}`);
   await waitForRecall(page);
+  await settle(page, 1500);
   const before = server.sends.length;
-  await typePrompt(page, 'write a poem about the ocean at night');
+  await typePrompt(page, 'write a poem about the ocean at night again');
   await page.keyboard.press('Enter');
   await page.waitForFunction((n) => document.querySelectorAll('[data-message-author-role="user"]').length === n, 2);
   assert.equal(server.sends.length, before + 1);
@@ -320,7 +321,9 @@ test('"Take me there" opens the chat, scrolls to the matching message and highli
   const target = page.locator('[data-recall-highlight="recall-jump-target"]');
   await target.waitFor({ timeout: 10000 });
   assert.match(await target.innerText(), /reverse a linked list in Python/);
-  await page.waitForTimeout(700); // smooth scroll
+  // The stand-in page, like ChatGPT, renders older turns late and jumps to the
+  // bottom after loading; the message must still end up (and stay) in view.
+  await page.waitForTimeout(1800);
   assert.ok(await target.evaluate((el) => {
     const r = el.getBoundingClientRect();
     return r.top >= 0 && r.bottom <= window.innerHeight;
@@ -347,4 +350,34 @@ test('cleanup shows a clear reason and a link for chats ChatGPT refuses to delet
   assert.match(await recall(page, 'recall-delete-result').innerText(), /Deleted 1 chat\./);
   assert.match(await recall(page, 'recall-delete-errors').innerText(), /1 couldn’t be deleted: ChatGPT refused the request \(403\)/);
   assert.deepEqual(server.deleted, ['untitled-a']);
+});
+
+test('repeating a question inside the same chat is stopped and scrolls to the earlier answer', async (t) => {
+  const filler = Array.from({ length: 10 }, (_, i) => `another question number ${i} about unrelated things`);
+  const env = await launch([
+    { id: 'study-chat', title: 'Study session', prompts: ['How do I center a div in CSS?', ...filler], updatedDaysAgo: 2 },
+  ]);
+  t.after(env.close);
+  const { page, server } = env;
+  await page.goto(`${ORIGIN}/c/study-chat`);
+  await waitForRecall(page);
+  await settle(page, 2000);
+
+  await typePrompt(page, 'how can I center a div using css');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  assert.match(await recall(page, 'recall-dialog').innerText(), /already asked this in this chat/);
+  assert.equal(server.sends.length, 0, 'not generated again');
+
+  await recall(page, 'recall-open-top').click(); // "Show me the answer"
+  const target = page.locator('[data-recall-highlight="recall-jump-target"]');
+  await target.waitFor({ timeout: 5000 });
+  assert.match(await target.innerText(), /center a div in CSS/);
+  await page.waitForTimeout(800);
+  assert.ok(await target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= window.innerHeight;
+  }), 'scrolled to the earlier question and its answer');
+  assert.equal((await page.locator('#prompt-textarea').innerText()).trim(), '', 'repeated draft cleared');
+  assert.equal(server.sends.length, 0);
 });
