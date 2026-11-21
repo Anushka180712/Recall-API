@@ -34,7 +34,7 @@ function firefoxManifest(m) {
   ff.background = {
     scripts: ['src/lib/umd.js', 'src/lib/text.js', 'src/lib/similarity.js', 'src/lib/historyIndex.js', 'src/lib/settings.js', 'src/lib/store.js', worker],
   };
-  ff.browser_specific_settings = { gecko: { id: 'recall@anushka180712.github.io', strict_min_version: '115.0' } };
+  ff.browser_specific_settings = { gecko: { id: 'recall@anushka180712.github.io', strict_min_version: '128.0' } };
   delete ff.minimum_chrome_version;
   return ff;
 }

@@ -11,6 +11,7 @@
     composer: [
       '#prompt-textarea',
       'div[contenteditable="true"].ProseMirror',
+      'form [contenteditable="true"][aria-label]',
       'form textarea',
       'main [contenteditable="true"]',
     ],
@@ -19,6 +20,9 @@
       'button#composer-submit-button',
       'button[aria-label="Send prompt"]',
       'button[aria-label*="Send"]',
+      // Any language: the composer form's submit button (ChatGPT 2026 has no test id).
+      'form:has([contenteditable="true"]) button[type="submit"]',
+      'form:has(textarea) button[type="submit"]',
     ],
     userMessage: ['[data-message-author-role="user"]'],
     sidebarLink: ['nav a[href*="/c/"]', 'aside a[href*="/c/"]'],

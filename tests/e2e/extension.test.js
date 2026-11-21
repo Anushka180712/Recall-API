@@ -659,3 +659,45 @@ test('when Recall is injected again (update), the newest copy takes over: one di
   await recall(page, 'recall-dialog').waitFor();
   assert.equal(server.sends.length, 2);
 });
+
+test('safety net: a send that skips the keyboard and the send button is still checked at the network level', async (t) => {
+  const env = await launch();
+  t.after(env.close);
+  const { page, server } = env;
+  await askInNewChat(env, 'How do I reverse a linked list in Python?');
+  const firstUrl = page.url();
+
+  // 1. Held back, "Keep editing": nothing is sent and the text is back in the box.
+  await freshChat(page);
+  page.evaluate(() => window.mockSendDirect('reverse a linked list in python'));
+  await recall(page, 'recall-dialog').waitFor();
+  assert.equal(server.sends.length, 1, 'held at the network level');
+  await recall(page, 'recall-cancel').click();
+  await page.waitForFunction(() => window.lastSendError === 'AbortError');
+  await page.waitForFunction(() => document.querySelector('#prompt-textarea').innerText.includes('reverse a linked list'));
+  assert.equal(server.sends.length, 1);
+
+  // 2. "Ask anyway" releases exactly that request.
+  await page.evaluate(() => (document.querySelector('#prompt-textarea').textContent = ''));
+  page.evaluate(() => window.mockSendDirect('python reverse a linked list'));
+  await recall(page, 'recall-dialog').waitFor();
+  await recall(page, 'recall-ask-anyway').click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-message-author-role="assistant"]').length === 1);
+  assert.equal(server.sends.length, 2);
+
+  // 3. "Take me there" stops the request and opens the earlier chat.
+  await freshChat(page);
+  page.evaluate(() => window.mockSendDirect('how do i reverse a linked list in python'));
+  await recall(page, 'recall-dialog').waitFor();
+  await recall(page, 'recall-open-top').click();
+  await page.waitForURL(firstUrl);
+  assert.equal(server.sends.length, 2);
+
+  // 4. Normal sends through the keyboard are not checked twice (no second dialog, sent once).
+  await freshChat(page);
+  await typePrompt(page, 'what is a good name for a goldfish');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelectorAll('[data-message-author-role="assistant"]').length === 1);
+  assert.equal(server.sends.length, 3);
+  assert.equal(await recall(page, 'recall-dialog').count(), 0);
+});

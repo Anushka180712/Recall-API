@@ -24,14 +24,17 @@ async function updateBadge() {
 }
 
 async function injectIntoOpenTabs() {
-  const [script] = chrome.runtime.getManifest().content_scripts || [];
-  if (!script || !chrome.scripting) return;
-  const tabs = await chrome.tabs.query({ url: script.matches });
+  const scripts = chrome.runtime.getManifest().content_scripts || [];
+  if (!scripts.length || !chrome.scripting) return;
+  const tabs = await chrome.tabs.query({ url: scripts[0].matches });
   await Promise.all(
-    tabs.map((tab) =>
-      chrome.scripting
-        .executeScript({ target: { tabId: tab.id }, files: script.js })
-        .catch(() => {}) // discarded or restricted tabs: the page will load Recall on its next reload
+    tabs.flatMap((tab) =>
+      // The page-world network hook first, then Recall itself.
+      [...scripts].reverse().map((script) =>
+        chrome.scripting
+          .executeScript({ target: { tabId: tab.id }, files: script.js, world: script.world === 'MAIN' ? 'MAIN' : 'ISOLATED' })
+          .catch(() => {}) // discarded or restricted tabs: the page will load Recall on its next reload
+      )
     )
   );
 }

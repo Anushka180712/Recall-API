@@ -108,7 +108,22 @@
         const empty = thread.querySelector('.empty');
         if (empty) empty.remove();
         addMsg('user', text);
-        const res = await fetch('/mock/send', { method: 'POST', body: JSON.stringify({ conversationId: convId(), text }) });
+        // Same request shape as ChatGPT's own "send message" call.
+        let res;
+        try {
+          res = await fetch('/backend-api/conversation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'next',
+              conversation_id: convId(),
+              messages: [{ id: 'local-' + Date.now(), author: { role: 'user' }, content: { content_type: 'text', parts: [text] }, metadata: {} }],
+            }),
+          });
+        } catch (err) {
+          window.lastSendError = err.name; // e.g. AbortError when held back
+          return;
+        }
         const { conversationId, answer } = await res.json();
         if (conversationId !== convId()) history.pushState({}, '', '/c/' + conversationId);
         addMsg('assistant', answer);
@@ -121,6 +136,12 @@
           send();
         }
       });
+      // A send that bypasses the keyboard and the send button (like a voice or
+      // shortcut send, or a page change Recall's listeners don't know about).
+      window.mockSendDirect = (text) => {
+        box.textContent = text;
+        return send();
+      };
       form.addEventListener('submit', (e) => {
         e.preventDefault();
         send();

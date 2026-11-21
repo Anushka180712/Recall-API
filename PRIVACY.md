@@ -26,6 +26,12 @@ When *you* choose to import your history or delete chats, Recall makes requests 
 chat.openai.com) from your open ChatGPT tab, using your existing signed-in session, in the same way the ChatGPT
 website does. These requests go only to ChatGPT.
 
+## The send check
+
+To make sure every message is checked, a small script in the ChatGPT page reads the text of the message you are
+sending, just before ChatGPT's own request leaves your browser, and asks Recall (on your device) whether to hold it.
+It never changes the request and never sends anything anywhere else.
+
 ## Logs
 
 Recall writes warnings to your browser's developer console only. Prompt text is never logged unless you turn on

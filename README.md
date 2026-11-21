@@ -11,7 +11,7 @@ and clears out stale chats in a few clicks instead of one by one.
 
 [![CI](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml/badge.svg)](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4f46e5)
-![Tests](https://img.shields.io/badge/tests-186%20passing-059669)
+![Tests](https://img.shields.io/badge/tests-187%20passing-059669)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-059669)
 ![Languages](https://img.shields.io/badge/UI-6%20languages-0ea5e9)
 ![Privacy](https://img.shields.io/badge/data-stays%20on%20your%20device-7c3aed)
@@ -82,7 +82,7 @@ finding things hard in the first place, Recall also offers to **clean those up i
 
 ## Install (2 minutes)
 
-Works in **Chrome, Edge, Brave, Opera, Vivaldi, Arc** (Chromium 110+), and experimentally in **Firefox 115+**, on
+Works in **Chrome, Edge, Brave, Opera, Vivaldi, Arc** (Chromium 111+), and experimentally in **Firefox 128+**, on
 `chatgpt.com` and `chat.openai.com`.
 
 ### Option A: load from source
@@ -381,6 +381,18 @@ a CommonJS module for Node tests.
 
 ### Data flow: checking a message before it's sent
 
+Every send is checked at **two levels**, so nothing slips through even when ChatGPT changes its page:
+
+1. **Keyboard / button (first line).** `content.js` catches Enter, the send button and the form submit in the
+   capture phase, before ChatGPT sees them, and holds the message right there.
+2. **Network (safety net).** [`page-hook.js`](src/content/page-hook.js) runs in the page's own world and wraps
+   `fetch`. When ChatGPT's "send message" request (`POST /backend-api/conversation` or `/backend-api/f/conversation`)
+   is about to leave, it reads the message from the request and asks Recall. Anything the first line already
+   approved goes straight through; anything it never saw is checked now, and is held, released or stopped
+   according to what you pick in the dialog. Regenerating an answer is never held. If Recall doesn't answer within
+   400 ms, the request goes through untouched (fail open). When this net catches something, the console says
+   so (`a send reached ChatGPT without passing the keyboard/button check`), which tells us ChatGPT changed its page.
+
 ```mermaid
 sequenceDiagram
     actor You
@@ -490,13 +502,14 @@ src/
     routes.js                 URL parsing (chat id, temporary chats)
   content/
     content.js                wires everything to the page: send hook, learning, jump, import, cleanup
+    page-hook.js              network safety net in the page's world: holds ChatGPT's send request until Recall checks it
     dom.js                    every ChatGPT selector, with fallbacks
     overlay.js                dialog, cleanup panel, toasts, label, launcher (Shadow DOM, translated)
   popup/                      popup + full settings page (popup.html?options=1)
   background/service-worker.js  defaults on install, re-inject after update, shortcut, OFF badge
 tests/
   unit/                       164 Node tests for src/lib, translations and the manifest
-  e2e/                        22 real-browser tests (Chromium + the extension + a mock chat app)
+  e2e/                        23 real-browser tests (Chromium + the extension + a mock chat app)
   fixtures/mock-chat.html     mock chat app used by the e2e tests and screenshots
 scripts/
   package.js                  builds the Chrome and Firefox zips
@@ -563,7 +576,7 @@ No `tabs`, `history`, `cookies`, `<all_urls>` or remote code; strict extension-p
 
 | Area | Choice |
 |---|---|
-| Platform | Browser extension, **Manifest V3** (Chromium 110+; Firefox 115+ experimental build) |
+| Platform | Browser extension, **Manifest V3** (Chromium 111+; Firefox 128+ experimental build) |
 | Language | Plain **JavaScript (ES2022)**, no framework, no TypeScript compile step |
 | Runtime dependencies | **None** |
 | UI | Hand-written DOM in a **Shadow DOM**, CSS variables for light/dark |
@@ -609,7 +622,7 @@ after each change. Turn on *Debug logging* to watch decisions in the console.
 
 ## Testing
 
-**186 automated tests** run on every push via GitHub Actions.
+**187 automated tests** run on every push via GitHub Actions.
 
 | Suite | Tests | What it covers |
 |---|---|---|
@@ -622,7 +635,7 @@ after each change. Turn on *Debug logging* to watch decisions in the console.
 | `text` | 9 | Normalising and tokenising, including CJK, Hindi and other languages' filler words. |
 | `i18n`, `log`, `manifest`, `settings`, `routes` | 19 | Every locale has every key and placeholder within store limits; log levels and prompt redaction; every manifest file exists, libraries load in the right order, every `t('key')` used in code is translated; the Firefox manifest. |
 | `jump` | 6 | Message id beats text, exact text, re-phrased matches, title-only matches, truncated long messages, no wrong guesses. |
-| **e2e** (real Chromium) | 22 | **Repeat after repeat in one page without reloading** (Esc, send button, *Ask anyway* covering exactly one send, switching chats, *Take me there*, then repeats there), **a re-injected copy taking over cleanly** (one dialog, one send), redirect, **several similar chats listed and any one opens at its own prompt**, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message (and below the sticky header) in a chat that renders late, jumps to the bottom and keeps the previous chat on screen during navigation, including matches that came only from the chat's title, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
+| **e2e** (real Chromium) | 23 | **The network safety net catching a send that skips the keyboard and the button** (Keep editing puts the text back, Ask anyway releases it, Take me there stops it), **Repeat after repeat in one page without reloading** (Esc, send button, *Ask anyway* covering exactly one send, switching chats, *Take me there*, then repeats there), **a re-injected copy taking over cleanly** (one dialog, one send), redirect, **several similar chats listed and any one opens at its own prompt**, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message (and below the sticky header) in a chat that renders late, jumps to the bottom and keeps the previous chat on screen during navigation, including matches that came only from the chat's title, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
 
 The end-to-end tests serve a mock chat app ([`tests/fixtures/mock-chat.html`](tests/fixtures/mock-chat.html)) on
 `https://chatgpt.com` via Playwright request routing, so no real account or network is involved:
@@ -657,6 +670,15 @@ scrolls to that prompt in the chat, even if it's worded differently from what yo
 The dialog lists up to 4 of them, best match first, each with its title, the prompt you asked there, the match
 percentage and when. Press **Open chat** on the one you want and Recall takes you to that chat, at that prompt.
 *Take me there* (or `O`) opens the top one.
+</details>
+
+<details open>
+<summary><b>Is every message checked, even if ChatGPT changes its page?</b></summary>
+
+Yes. Besides catching Enter and the send button, Recall checks ChatGPT's own "send message" request just before
+it leaves the browser. Only an explicit "give me a new answer" (or the other rules in the table) lets a repeat
+through. If you see `[Recall:content] a send reached ChatGPT without passing the keyboard/button check` in the
+console, the safety net did its job; please report it so the first line can be updated.
 </details>
 
 <details open>

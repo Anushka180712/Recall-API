@@ -125,6 +125,7 @@
     importing: false,
     dirty: false,
     pausedUntil: 0, // "Pause for 1 hour": no checks until this time
+    allowed: null, // last prompt the keyboard/button check let through, for the network check
   };
 
   // ------------------------------------------------------------------ boot
@@ -206,30 +207,14 @@
     if (state.bypassUntil > now) {
       state.bypassUntil = 0; // "Ask anyway" covers exactly one send
       log.debug('send let through once (Ask anyway)', { via: event.type });
-      remember(prompt);
+      letThrough(prompt);
       return;
     }
     state.bypassUntil = 0;
 
-    const decision = policy.evaluate(prompt, currentContext(), state.index, state.settings);
-    log.debug('decision', {
-      via: event.type,
-      reason: decision.reason,
-      prompt: log.text(prompt),
-      matches: decision.matches.map((m) => ({ chat: m.conversationId, score: Math.round(m.score * 100) / 100, exact: !!m.exact })),
-    });
-    // Shown in the popup as "Last check", so you can always see why Recall did
-    // or didn't step in for the message you just sent.
-    store.setLastDecision({
-      at: Date.now(),
-      reason: decision.reason,
-      explanation: decision.explanation,
-      prompt: globalThis.Recall.text.truncate(prompt, 80),
-      known: state.index.stats().prompts,
-    }).catch(() => {});
-
+    const decision = decide(prompt, event.type);
     if (!decision.intercept) {
-      remember(prompt);
+      letThrough(prompt);
       return;
     }
 
@@ -266,6 +251,118 @@
         resend(); // send the message you were about to send
       },
     });
+  }
+
+  /** Run the rules for a prompt, log the outcome and record it for the popup. */
+  function decide(prompt, via, extra = {}) {
+    const ctx = { ...currentContext(), ...extra, hasAttachments: currentContext().hasAttachments || !!extra.hasAttachments };
+    const decision = policy.evaluate(prompt, ctx, state.index, state.settings);
+    log.debug('decision', {
+      via,
+      reason: decision.reason,
+      prompt: log.text(prompt),
+      matches: decision.matches.map((m) => ({ chat: m.conversationId, score: Math.round(m.score * 100) / 100, exact: !!m.exact })),
+    });
+    // Shown in the popup as "Last check", so you can always see why Recall did
+    // or didn't step in for the message you just sent.
+    store.setLastDecision({
+      at: Date.now(),
+      reason: decision.reason,
+      explanation: decision.explanation,
+      prompt: globalThis.Recall.text.truncate(prompt, 80),
+      known: state.index.stats().prompts,
+    }).catch(() => {});
+    return decision;
+  }
+
+  /** The prompt is going to ChatGPT: learn it, and tell the network check it was already approved. */
+  function letThrough(prompt) {
+    remember(prompt);
+    state.allowed = { norm: globalThis.Recall.text.normalize(prompt), at: Date.now() };
+  }
+
+  function recentlyAllowed(prompt) {
+    const a = state.allowed;
+    return !!a && a.norm === globalThis.Recall.text.normalize(prompt) && Date.now() - a.at < 20000;
+  }
+
+  // ------------------------------------------------ network-level safety net
+  // src/content/page-hook.js (running in the page's own world) holds ChatGPT's
+  // "send message" request and asks us here. Anything the keyboard/button
+  // check above already approved goes straight through; anything it never saw
+  // (ChatGPT changed its page, a shortcut we don't know, a voice send...) is
+  // checked now, so every single send is checked.
+  function onNetworkSend(e) {
+    if (retired || superseded()) return;
+    if (!contextAlive()) return retire();
+    let req;
+    try {
+      req = JSON.parse(e.detail);
+    } catch {
+      return;
+    }
+    const reply = (v) => document.dispatchEvent(new CustomEvent('recall:verdict', { detail: JSON.stringify({ id: req.id, ...v }) }));
+    try {
+      if (!state.settings || overlay.isOpen || recentlyAllowed(req.text)) return reply({ allow: true });
+      const decision = decide(req.text, 'network', { hasAttachments: req.hasAttachments });
+      log.warn('a send reached ChatGPT without passing the keyboard/button check; checked it at the network level', { reason: decision.reason });
+      if (!decision.intercept) {
+        letThrough(req.text);
+        return reply({ allow: true });
+      }
+      reply({ hold: true });
+      store.bumpStat('suggestions').catch(() => {});
+      const send = () => {
+        letThrough(req.text);
+        reply({ allow: true });
+      };
+      overlay.showRedirect({
+        prompt: req.text,
+        matches: decision.matches,
+        onOpen: (m) => {
+          reply({ allow: false });
+          store.bumpStat('redirects').catch(() => {});
+          openAndJump(m, req.text);
+        },
+        onAskAnyway: () => {
+          store.bumpStat('overrides').catch(() => {});
+          send();
+        },
+        onNotHelpful: async (m) => {
+          state.snoozes = await store.snooze(req.text, m.conversationId, state.settings.snoozeDays);
+          send();
+        },
+        onCancel: () => {
+          reply({ allow: false });
+          restoreComposer(req.text);
+        },
+        onPause: async () => {
+          state.pausedUntil = await store.pause(60 * 60 * 1000);
+          send();
+        },
+      });
+    } catch (err) {
+      log.error('network check failed; letting the message through', { error: err && err.message });
+      reply({ allow: true });
+    }
+  }
+  document.addEventListener('recall:send', onNetworkSend);
+  cleanups.push(() => document.removeEventListener('recall:send', onNetworkSend));
+
+  /** Put a held-back message back in the message box so you can edit it. */
+  function restoreComposer(prompt) {
+    setTimeout(() => {
+      const c = dom.composer();
+      if (!c) return;
+      c.focus();
+      if ('value' in c && typeof c.value === 'string') {
+        c.value = prompt;
+      } else {
+        document.execCommand('selectAll', false);
+        document.execCommand('insertText', false, prompt);
+      }
+      c.dispatchEvent(new Event('input', { bubbles: true }));
+    }, 300);
   }
 
   function resend({ bypass = true } = {}) {

@@ -98,8 +98,10 @@ class MockServer {
       return json({ title: c.title, mapping });
     }
 
-    if (url.pathname === '/mock/send') {
-      const { conversationId, text } = JSON.parse(req.postData());
+    if (url.pathname === '/backend-api/conversation' && req.method() === 'POST') {
+      const body = JSON.parse(req.postData());
+      const conversationId = body.conversation_id;
+      const text = body.messages[0].content.parts.join('\n');
       let id = conversationId;
       if (!id || !this.conversations.has(id)) {
         id = `mock-${String(this.nextId++).padStart(4, '0')}-chat`;
