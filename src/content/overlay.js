@@ -332,14 +332,21 @@
         const bar = h('i');
         const status = h('div', { class: 'status', 'data-testid': 'recall-progress' }, `Deleting 0 / ${ids.length}…`);
         body.replaceChildren(h('div', { class: 'bar' }, bar), status);
-        const res = await o.onDelete(ids, (done, total) => {
-          bar.style.width = `${Math.round((done / total) * 100)}%`;
-          status.textContent = `Deleting ${done} / ${total}…`;
-        });
-        const msg = [h('div', { class: 'ok', 'data-testid': 'recall-delete-result' }, `Deleted ${res.deleted.length} chat${res.deleted.length === 1 ? '' : 's'}.`)];
+        let res;
+        try {
+          res = await o.onDelete(ids, (done, total) => {
+            bar.style.width = `${Math.round((done / total) * 100)}%`;
+            status.textContent = `Deleting ${done} / ${total}…`;
+          });
+        } catch (err) {
+          res = { deleted: [], failed: ids.map((id) => ({ id, error: err.message })) };
+        }
+        const titleOf = new Map(suggestions.map((x) => [x.id, x.title]));
+        const msg = [h('div', { class: res.deleted.length ? 'ok' : 'err', 'data-testid': 'recall-delete-result' }, `Deleted ${res.deleted.length} chat${res.deleted.length === 1 ? '' : 's'}.`)];
         if (res.failed.length) {
-          msg.push(h('div', { class: 'err' }, `${res.failed.length} couldn’t be deleted. You can open them and delete them by hand:`));
-          msg.push(h('ul', { class: 'list' }, res.failed.map((f) => h('li', { style: 'display:block' }, h('a', { href: o.urlFor(f.id), target: '_blank', rel: 'noopener' }, f.id)))));
+          const reasons = [...new Set(res.failed.map((f) => f.error))];
+          msg.push(h('div', { class: 'err', 'data-testid': 'recall-delete-errors' }, `${res.failed.length} couldn’t be deleted: ${reasons.join(' ')} You can open them and delete them by hand:`));
+          msg.push(h('ul', { class: 'list' }, res.failed.map((f) => h('li', { style: 'display:block' }, h('a', { href: o.urlFor(f.id), target: '_blank', rel: 'noopener' }, titleOf.get(f.id) || f.id)))));
         }
         status.replaceChildren(...msg);
         body.append(h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => { close(); if (res.deleted.length) o.onFinished && o.onFinished(res); } }, 'Done')));

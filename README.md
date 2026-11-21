@@ -11,7 +11,7 @@ and clears out stale chats in a few clicks instead of one by one.
 
 [![CI](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml/badge.svg)](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4f46e5)
-![Tests](https://img.shields.io/badge/tests-142%20passing-059669)
+![Tests](https://img.shields.io/badge/tests-146%20passing-059669)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-059669)
 ![Privacy](https://img.shields.io/badge/data-stays%20on%20your%20device-7c3aed)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -57,7 +57,7 @@ finding things hard in the first place, Recall also offers to **clean those up i
 | | |
 |---|---|
 | 🔁 **Repeat detection** | Catches re-phrased questions, not just copy-pastes ("reverse linked list python" ≈ "How do I reverse a linked list in Python?"). |
-| ↩️ **Redirect, don't re-ask** | Shows up to 3 earlier chats with a similarity score, the prompt you asked back then and when. *Take me there* opens it. |
+| ↩️ **Redirect, don't re-ask** | Shows up to 3 earlier chats with a similarity score, the prompt you asked back then and when. *Take me there* opens it, **scrolls straight to the message you asked** and highlights it (and the chat in the sidebar). |
 | 🧠 **Knows when *not* to interrupt** | 13 explicit rules: never for "generate a new one", small talk, time-sensitive questions, follow-ups, attachments, temporary chats and more ([full list](#when-does-recall-step-in-and-when-doesnt-it)). |
 | ✋ **You are always in control** | *Ask anyway*, *Not the same* (never suggests that chat for that question again), or *Keep editing*. Keyboard shortcuts `O` / `A` / `Esc`. |
 | 🧹 **Bulk cleanup** | Finds untitled, greeting-only, duplicate and long-abandoned chats, explains why for each, and deletes the ones you tick, after a confirmation. |
@@ -190,7 +190,7 @@ Just use ChatGPT. When you're about to repeat yourself, Recall pauses the send a
 
 | Action | What happens | Shortcut |
 |---|---|---|
-| **Take me there** / **Open chat** | Opens the earlier conversation. Your message is *not* sent. | `O` |
+| **Take me there** / **Open chat** | Opens the earlier conversation, scrolls to the matching message and highlights it for a moment. Your message is *not* sent. | `O` |
 | **Ask anyway** | Sends your message right now, exactly as typed. | `A` |
 | **Not the same** | Never suggests that chat for this question again (for 30 days), then continues. | |
 | **Keep editing** | Closes the dialog and puts you back in the message box. Nothing is sent. | `Esc` |
@@ -300,8 +300,8 @@ src/
   popup/                    popup UI
   background/               tiny service worker (install defaults)
 tests/
-  unit/                     133 Node tests for src/lib
-  e2e/                      9 real-browser tests (Chromium + the extension + a mock chat app)
+  unit/                     134 Node tests for src/lib
+  e2e/                      12 real-browser tests (Chromium + the extension + a mock chat app)
   fixtures/mock-chat.html   the mock chat app used by e2e tests and screenshots
 scripts/                    package, screenshots, icon generation
 ```
@@ -316,7 +316,7 @@ scripts/                    package, screenshots, icon generation
 - **Fail open.** If anything goes wrong, Recall lets the message through. It never blocks you from using ChatGPT.
 - **Isolated fragility.** All page selectors live in `dom.js` and all endpoint knowledge in `chatgptApi.js`, each
   with fallbacks and clear errors.
-- **Least privilege.** Only the `storage` permission plus host access to ChatGPT. No `tabs`, `history`,
+- **Least privilege.** Only `storage` and `scripting` plus host access to ChatGPT. No `tabs`, `history`,
   `cookies`, `<all_urls>` or remote code; strict extension-page CSP.
 
 ## Privacy and permissions
@@ -333,6 +333,7 @@ scripts/                    package, screenshots, icon generation
 | Permission | Why |
 |---|---|
 | `storage` | Save your settings and the local prompt index. |
+| `scripting` | After Recall is updated, re-attach it to ChatGPT tabs that are already open, so you don't have to reload them. |
 | `https://chatgpt.com/*`, `https://chat.openai.com/*` | Run on ChatGPT (and only there). |
 
 See [PRIVACY.md](PRIVACY.md) for the full policy.
@@ -359,7 +360,7 @@ Load the folder as an unpacked extension (see [Install](#install)) and hit the �
 
 ## Testing
 
-**142 automated tests** run on every push via GitHub Actions.
+**146 automated tests** run on every push via GitHub Actions.
 
 | Suite | Count | What it covers |
 |---|---|---|
@@ -367,9 +368,9 @@ Load the folder as an unpacked extension (see [Install](#install)) and hit the �
 | `tests/unit/similarity.test.js` | 23 | Labelled paraphrases must match; same-template, different-topic pairs must not. |
 | `tests/unit/historyIndex.test.js` | 16 | Search ranking, IDF, caps, eviction, cross-tab merge, deletions, wipe. |
 | `tests/unit/cleanup.test.js` | 10 | Each staleness signal, duplicates, protected/open chats, malformed input. |
-| `tests/unit/chatgptApi.test.js` | 12 | Parallel paging, concurrency limits, 429 back-off, prompt extraction, token refresh, partial delete failures. |
+| `tests/unit/chatgptApi.test.js` | 13 | Parallel paging, concurrency limits, 429 back-off, prompt extraction, token refresh, partial delete failures, clear error messages, already-deleted chats. |
 | `tests/unit/store.test.js`, `settings`, `routes`, `text` | 22 | Persistence, validation, URL parsing, tokenisation. |
-| `tests/e2e/extension.test.js` | 9 | **Real Chromium with the extension loaded** against a mock chat app: redirect, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat follow-ups, *Not the same*, import, passive learning, bulk delete with confirmation, popup tester and *Last message* explanation, on/off switch, an exact pasted copy of a long opening prompt, and a **speed test**: importing 200 chats from a deliberately slow server must finish in under 15 s. |
+| `tests/e2e/extension.test.js` | 12 | **Real Chromium with the extension loaded** against a mock chat app: redirect, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat follow-ups, *Not the same*, import, passive learning, bulk delete with confirmation, popup tester and *Last message* explanation, on/off switch, an exact pasted copy of a long opening prompt, *Take me there* scrolling to the right message, ChatGPT refusing a delete, reloading the extension mid-session, and a **speed test**: importing 200 chats from a deliberately slow server must finish in under 15 s. |
 
 The end-to-end tests serve a small mock chat app ([`tests/fixtures/mock-chat.html`](tests/fixtures/mock-chat.html))
 on `https://chatgpt.com` via Playwright request routing, so no real account or network is involved. To run them
@@ -383,6 +384,10 @@ CHROMIUM_PATH=/path/to/chrome npm run test:e2e
 ```
 
 ## Limitations and FAQ
+
+**"Extension context invalidated" or Recall stopped reacting?** That happens when Recall is reloaded or updated
+while a ChatGPT tab is open. Recall now re-attaches itself to open tabs automatically. If it can't, it steps aside
+(ChatGPT keeps working normally) and shows a **Reload page** button. One click and it's back.
 
 **Where does Recall show up, and how do I check it's working?** When it steps in, a dialog appears in the middle
 of the ChatGPT page *instead of* your message being sent. To see what happened with any message, click the Recall

@@ -71,6 +71,7 @@ class MockServer {
     if (m) {
       const c = this.conversations.get(m[1]);
       if (req.method() === 'PATCH') {
+        if (this.refuseDelete && this.refuseDelete.has(m[1])) return json({ detail: 'forbidden' }, 403);
         if (!c) return json({}, 404);
         if (JSON.parse(req.postData() || '{}').is_visible === false) {
           this.conversations.delete(m[1]);
@@ -127,7 +128,7 @@ async function launch(seed, { deviceScaleFactor = 1, viewport = { width: 1280, h
     fs.rmSync(userDataDir, { recursive: true, force: true });
   }
 
-  return { context, page, server, extensionId, close };
+  return { context, page, server, extensionId, worker, close };
 }
 
 /** Type into the mock composer like a user would. */

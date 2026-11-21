@@ -158,3 +158,16 @@ test('getConversations fetches in parallel and reports failures per chat', async
   assert.deepEqual(progress, [1, 2, 3]);
   assert.equal(srv.calls.filter((c) => c.url.includes('/api/auth/session')).length, 1, 'one shared session lookup');
 });
+
+test('deleting a chat that is already gone (404) counts as done; other errors are explained', async () => {
+  const fetch = async (url) => {
+    if (url.includes('session')) return { ok: true, status: 200, json: async () => ({ accessToken: 't' }) };
+    if (url.endsWith('/gone')) return { ok: false, status: 404, json: async () => ({}) };
+    return { ok: false, status: 403, json: async () => ({}) };
+  };
+  const api = createClient({ fetch });
+  const res = await api.deleteMany(['gone', 'blocked']);
+  assert.deepEqual(res.deleted, ['gone']);
+  assert.equal(res.failed[0].id, 'blocked');
+  assert.match(res.failed[0].error, /refused the request \(403\)/);
+});

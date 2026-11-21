@@ -270,3 +270,81 @@ test('exact copy of an earlier chat’s opening prompt is redirected, and the po
   await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
   await popup.locator('[data-testid="last-check"]', { hasText: 'Recall offered an earlier chat' }).waitFor();
 });
+
+test('after the extension is reloaded/updated, the old copy steps aside: ChatGPT keeps sending and a reload prompt appears', async (t) => {
+  const env = await launch([{ id: 'tcp-chat', title: 'TCP vs UDP', prompts: ['Explain the difference between TCP and UDP'], updatedDaysAgo: 3 }]);
+  t.after(env.close);
+  const { page, server, worker } = env;
+  await page.goto(`${ORIGIN}/c/tcp-chat`);
+  await waitForRecall(page);
+  await settle(page, 2500);
+  await page.goto(`${ORIGIN}/`);
+  await waitForRecall(page);
+
+  // What clicking reload on chrome://extensions (or an update) does. In this
+  // automated browser the extension doesn't come back afterwards, which is the
+  // worst case: the old copy in the tab can no longer reach Chrome's APIs.
+  await worker.evaluate(() => globalThis.chrome.runtime.reload()).catch(() => {});
+  await page.waitForTimeout(1000);
+
+  // A repeat question is NOT blocked by a broken copy: it is sent normally.
+  await typePrompt(page, 'what is the difference between udp and tcp');
+  await page.keyboard.press('Enter');
+  await page.waitForURL(/\/c\//);
+  assert.equal(server.sends.length, 1);
+  assert.equal(await recall(page, 'recall-dialog').count(), 0);
+
+  // ...and a clear prompt explains what to do.
+  await recall(page, 'recall-reload').waitFor({ timeout: 5000 });
+  assert.match(await recall(page, 'recall-reload').innerText(), /Reload this page/);
+  assert.equal(await recall(page, 'recall-launcher').count(), 0, 'dead cleanup button is removed');
+});
+
+test('"Take me there" opens the chat, scrolls to the matching message and highlights it', async (t) => {
+  const filler = Array.from({ length: 12 }, (_, i) => `follow-up question number ${i} about something else entirely`);
+  const env = await launch([
+    { id: 'long-chat', title: 'Big learning session', prompts: [...filler.slice(0, 8), 'How do I reverse a linked list in Python?', ...filler.slice(8)], updatedDaysAgo: 4 },
+  ]);
+  t.after(env.close);
+  const { page } = env;
+  await page.goto(`${ORIGIN}/c/long-chat`);
+  await waitForRecall(page);
+  await settle(page, 2500);
+
+  await freshChat(page);
+  await typePrompt(page, 'reverse a linked list in python');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-open-top').click();
+  await page.waitForURL(/\/c\/long-chat/);
+
+  const target = page.locator('[data-recall-highlight="recall-jump-target"]');
+  await target.waitFor({ timeout: 10000 });
+  assert.match(await target.innerText(), /reverse a linked list in Python/);
+  await page.waitForTimeout(700); // smooth scroll
+  assert.ok(await target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= window.innerHeight;
+  }), 'the matching message is scrolled into view');
+  await page.locator('[data-recall-highlight="recall-jump-link"]').waitFor({ timeout: 3000 });
+});
+
+test('cleanup shows a clear reason and a link for chats ChatGPT refuses to delete', async (t) => {
+  const env = await launch([
+    { id: 'untitled-a', title: 'New chat', prompts: ['hi'], updatedDaysAgo: 5 },
+    { id: 'untitled-b', title: 'New chat', prompts: ['test'], updatedDaysAgo: 6 },
+  ]);
+  t.after(env.close);
+  const { page, server } = env;
+  server.refuseDelete = new Set(['untitled-b']);
+  await page.goto(`${ORIGIN}/`);
+  await waitForRecall(page);
+  await recall(page, 'recall-launcher').click();
+  await recall(page, 'recall-suggestion').first().waitFor();
+  await recall(page, 'recall-select-all').click();
+  await recall(page, 'recall-delete').click();
+  await recall(page, 'recall-confirm-delete').click();
+  await recall(page, 'recall-delete-result').waitFor({ timeout: 10000 });
+  assert.match(await recall(page, 'recall-delete-result').innerText(), /Deleted 1 chat\./);
+  assert.match(await recall(page, 'recall-delete-errors').innerText(), /1 couldn’t be deleted: ChatGPT refused the request \(403\)/);
+  assert.deepEqual(server.deleted, ['untitled-a']);
+});

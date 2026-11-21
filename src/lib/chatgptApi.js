@@ -67,7 +67,7 @@
       const res = await fetchImpl(origin + path, {
         credentials: 'include',
         ...init,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(init.headers || {}) },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...extraHeaders(), ...(init.headers || {}) },
       });
       if (res.status === 401 && retry) {
         token = null; // token expired: fetch a fresh one once
@@ -79,7 +79,7 @@
         await sleep(header > 0 ? header * 1000 : backoffMs * 2 ** attempt);
         return request(path, init, retry, attempt + 1);
       }
-      if (!res.ok) throw new ChatGPTApiError(`${init.method || 'GET'} ${path} failed (${res.status})`, res.status);
+      if (!res.ok) throw new ChatGPTApiError(friendlyError(res.status), res.status);
       return res.status === 204 ? null : res.json();
     }
 
@@ -146,10 +146,15 @@
 
     /** Hides the chat exactly like the web app's own "Delete" menu item does. */
     async function deleteConversation(id) {
-      await request(`/backend-api/conversation/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ is_visible: false }),
-      });
+      try {
+        await request(`/backend-api/conversation/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ is_visible: false }),
+        });
+      } catch (err) {
+        if (err.status === 404) return true; // already gone: that's what we wanted
+        throw err;
+      }
       return true;
     }
 
@@ -176,6 +181,28 @@
     }
 
     return { listConversations, getConversation, getConversations, deleteConversation, deleteMany, getAccessToken };
+  }
+
+  /** Headers the ChatGPT web app itself sends; some endpoints reject requests without them. */
+  function extraHeaders() {
+    const out = {};
+    try {
+      const m = typeof document !== 'undefined' && document.cookie.match(/(?:^|;\s*)oai-did=([^;]+)/);
+      if (m) out['oai-device-id'] = decodeURIComponent(m[1]);
+      if (typeof navigator !== 'undefined' && navigator.language) out['oai-language'] = navigator.language;
+    } catch {
+      /* not in a page */
+    }
+    return out;
+  }
+
+  function friendlyError(status) {
+    if (status === 401) return 'You seem to be signed out of ChatGPT (401). Sign in and try again.';
+    if (status === 403) return 'ChatGPT refused the request (403). Reload the ChatGPT page and try again.';
+    if (status === 404) return 'Not found (404); it may already be deleted.';
+    if (status === 429) return 'ChatGPT is rate-limiting requests (429). Wait a minute and try again.';
+    if (status >= 500) return `ChatGPT had a server error (${status}). Try again shortly.`;
+    return `Request failed (${status}).`;
   }
 
   function toMs(t) {

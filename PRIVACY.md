@@ -34,6 +34,7 @@ website does. These requests go only to ChatGPT.
 ## Permissions
 
 - `storage`: to save the data described above on your device.
+- `scripting`: after an update, to re-attach Recall to ChatGPT tabs that are already open (only ChatGPT tabs).
 - Host access to `https://chatgpt.com/*` and `https://chat.openai.com/*`: to run on ChatGPT, and nowhere else.
 
 ## Contact

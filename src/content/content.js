@@ -18,6 +18,63 @@
   const log = (...a) => DEBUG && console.debug('[Recall]', ...a);
 
   const UNTITLED_RE = /^(?:new chat|untitled|new conversation)$/i;
+
+  // ------------------------------------------------------- lifecycle guard
+  // When the extension is updated, reloaded or disabled, this script keeps
+  // running in already-open tabs but every chrome.* API stops working
+  // ("Extension context invalidated"). We detect that, step aside cleanly so
+  // ChatGPT keeps working normally, and either hand over to the freshly
+  // injected copy or ask for a page reload.
+  const INSTANCE = Math.random().toString(36).slice(2);
+  document.documentElement.dataset.recallInstance = INSTANCE;
+  const cleanups = [];
+  let retired = false;
+
+  function contextAlive() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Register a window listener that is removed when this copy retires. */
+  function on(type, fn, capture) {
+    const wrapped = (e) => {
+      if (retired) return;
+      if (!contextAlive()) return retire();
+      fn(e);
+    };
+    window.addEventListener(type, wrapped, capture);
+    cleanups.push(() => window.removeEventListener(type, wrapped, capture));
+  }
+
+  function retire() {
+    if (retired) return;
+    retired = true;
+    for (const fn of cleanups.splice(0)) {
+      try {
+        fn();
+      } catch {
+        /* ignore */
+      }
+    }
+    overlay.closeModal();
+    overlay.setLauncher(false);
+    // Give a freshly injected copy a moment to take over before asking for a reload.
+    setTimeout(() => {
+      if (document.documentElement.dataset.recallInstance !== INSTANCE) {
+        overlay.host.remove(); // a newer copy is running: disappear quietly
+        return;
+      }
+      overlay.toast(
+        'Recall was updated or restarted. Reload this page to switch it back on. ChatGPT works normally in the meantime.',
+        [{ label: 'Later' }, { label: 'Reload page', primary: true, onClick: () => location.reload() }],
+        { testid: 'recall-reload' }
+      );
+    }, 1500);
+  }
+
   const store = storeMod.createStore();
   const api = chatgptApi.createClient({ origin: location.origin });
   const overlay = new globalThis.RecallOverlay();
@@ -50,8 +107,10 @@
     overlay.mount();
     overlay.setLauncher(state.settings.enabled && state.settings.showLauncher, openCleanup);
     observeConversation();
-    setInterval(checkUrl, 400);
+    const timer = setInterval(() => (contextAlive() ? checkUrl() : retire()), 400);
+    cleanups.push(() => clearInterval(timer));
     setTimeout(firstRunAndNudges, 1500);
+    jumpToTarget(); // arrived here via "Take me there" (full page load)
     log('ready', state.index.stats());
   }
 
@@ -111,7 +170,7 @@
       matches: decision.matches,
       onOpen: (m) => {
         store.bumpStat('redirects').catch(() => {});
-        location.assign(routes.conversationUrl(m.conversationId, location.origin));
+        openAndJump(m);
       },
       onAskAnyway: () => {
         store.bumpStat('overrides').catch(() => {});
@@ -143,7 +202,7 @@
     }
   }
 
-  window.addEventListener(
+  on(
     'keydown',
     (e) => {
       if (e.key !== 'Enter' || e.shiftKey || e.isComposing || e.keyCode === 229) return;
@@ -154,7 +213,7 @@
     true
   );
 
-  window.addEventListener(
+  on(
     'click',
     (e) => {
       if (!dom.isSendButton(e.target)) return;
@@ -164,7 +223,7 @@
     true
   );
 
-  window.addEventListener(
+  on(
     'submit',
     (e) => {
       if (!e.target || !e.target.contains(dom.composer())) return;
@@ -206,6 +265,92 @@
       state.pending = null;
     }
     scheduleScrape();
+    jumpToTarget();
+  }
+
+  // ------------------------------------------------- "Take me there" jump
+  const JUMP_KEY = 'recall.jump';
+
+  /**
+   * Open the earlier chat and remember which message to scroll to. The target
+   * lives in sessionStorage so it survives a full page load as well as
+   * ChatGPT's in-app navigation.
+   */
+  function openAndJump(m) {
+    try {
+      sessionStorage.setItem(JUMP_KEY, JSON.stringify({ id: m.conversationId, prompt: m.prompt, title: m.source === 'title', at: Date.now() }));
+    } catch {
+      /* storage blocked: we still open the chat */
+    }
+    const link = document.querySelector(`nav a[href$="/c/${CSS.escape(m.conversationId)}"], aside a[href$="/c/${CSS.escape(m.conversationId)}"]`);
+    if (link) link.click(); // in-app navigation: no full reload, much faster
+    else location.assign(routes.conversationUrl(m.conversationId, location.origin));
+    // If the click didn't navigate (e.g. the sidebar link is inert), fall back.
+    setTimeout(() => {
+      if (routes.conversationId(location.href) !== m.conversationId) location.assign(routes.conversationUrl(m.conversationId, location.origin));
+    }, 1500);
+  }
+
+  let jumpTimer = 0;
+  function jumpToTarget() {
+    let target;
+    try {
+      target = JSON.parse(sessionStorage.getItem(JUMP_KEY) || 'null');
+    } catch {
+      return;
+    }
+    if (!target || Date.now() - target.at > 30000) return;
+    if (routes.conversationId(location.href) !== target.id) return;
+    clearInterval(jumpTimer);
+    const started = Date.now();
+    jumpTimer = setInterval(() => {
+      const els = [...document.querySelectorAll(dom.SELECTORS.userMessage.join(','))];
+      if (!els.length && Date.now() - started < 12000) return; // chat still loading
+      clearInterval(jumpTimer);
+      sessionStorage.removeItem(JUMP_KEY);
+      highlightSidebar(target.id);
+      if (!els.length || target.title) return;
+      const el = bestMessage(els, target.prompt);
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      flash(el, 'recall-jump-target');
+    }, 250);
+  }
+
+  /** The rendered user message that best matches the remembered prompt. */
+  function bestMessage(els, prompt) {
+    const { normalize } = globalThis.Recall.text;
+    const want = normalize(prompt);
+    let best = els[0];
+    let bestScore = -1;
+    for (const el of els) {
+      const got = normalize(el.innerText || el.textContent || '');
+      const score = got === want || got.startsWith(want) ? 2 : globalThis.Recall.similarity.score(got.slice(0, 400), want);
+      if (score > bestScore) [best, bestScore] = [el, score];
+    }
+    return best;
+  }
+
+  function highlightSidebar(id) {
+    const link = document.querySelector(`nav a[href$="/c/${CSS.escape(id)}"], aside a[href$="/c/${CSS.escape(id)}"]`);
+    if (!link) return;
+    link.scrollIntoView({ block: 'nearest' });
+    flash(link, 'recall-jump-link');
+  }
+
+  /** Briefly outline an element of the page (inline styles, restored afterwards). */
+  function flash(el, marker) {
+    const prev = { outline: el.style.outline, outlineOffset: el.style.outlineOffset, transition: el.style.transition, boxShadow: el.style.boxShadow };
+    el.setAttribute('data-recall-highlight', marker);
+    Object.assign(el.style, {
+      transition: 'outline-color .6s ease, box-shadow .6s ease',
+      outline: '3px solid #6366f1',
+      outlineOffset: '4px',
+      boxShadow: '0 0 0 8px rgba(99, 102, 241, .18)',
+    });
+    setTimeout(() => {
+      Object.assign(el.style, prev);
+      el.removeAttribute('data-recall-highlight');
+    }, 2800);
   }
 
   let scrapeTimer = 0;
@@ -216,7 +361,7 @@
 
   /** Learn from the chat on screen, so old chats become searchable just by opening them. */
   function scrapeOpenConversation() {
-    if (!state.settings || !state.settings.passiveIndexing) return;
+    if (retired || !state.settings || !state.settings.passiveIndexing) return;
     if (routes.isTemporaryChat(location.href)) return;
     const id = routes.conversationId(location.href);
     if (!id) return;
@@ -230,7 +375,9 @@
   function observeConversation() {
     const target = document.querySelector('main') || document.body;
     if (!target) return;
-    new MutationObserver(() => scheduleScrape()).observe(target, { childList: true, subtree: true });
+    const mo = new MutationObserver(() => scheduleScrape());
+    mo.observe(target, { childList: true, subtree: true });
+    cleanups.push(() => mo.disconnect());
     scheduleScrape();
   }
 
@@ -242,7 +389,7 @@
 
   async function flush() {
     clearTimeout(state.saveTimer);
-    if (!state.dirty) return;
+    if (!state.dirty || retired || !contextAlive()) return;
     state.dirty = false;
     try {
       const removed = state.removed.splice(0);
@@ -366,6 +513,7 @@
   }
 
   function openCleanup() {
+    if (!contextAlive()) return retire();
     overlay.showCleanup({
       load: loadCleanup,
       urlFor: (id) => routes.conversationUrl(id, location.origin),
@@ -375,8 +523,13 @@
         listCache.data = null; // the list changed
         for (const id of res.deleted) state.index.removeConversation(id);
         state.removed.push(...res.deleted);
-        await store.saveIndex(state.index, { removedConversations: state.removed.splice(0) });
-        if (res.deleted.length) await store.bumpStat('deleted', res.deleted.length);
+        // Bookkeeping must never turn a successful delete into an error.
+        try {
+          await store.saveIndex(state.index, { removedConversations: state.removed.splice(0) });
+          if (res.deleted.length) await store.bumpStat('deleted', res.deleted.length);
+        } catch (err) {
+          log('could not save after delete', err.message);
+        }
         return res;
       },
       onFinished: (res) => {
@@ -389,7 +542,7 @@
   }
 
   async function firstRunAndNudges() {
-    if (!state.settings || !state.settings.enabled) return;
+    if (retired || !contextAlive() || !state.settings || !state.settings.enabled) return;
     const meta = await store.getMeta();
     const now = Date.now();
 
