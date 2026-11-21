@@ -6,71 +6,85 @@
     <title>Recall</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
+  <!-- The same page is the toolbar popup and, with ?options=1, the full settings page. -->
   <body>
     <header>
       <div class="brand">
         <img src="../../icons/icon32.png" alt="" width="24" height="24" />
         <div>
           <h1>Recall</h1>
-          <span class="tag">Already asked that?</span>
+          <span class="tag" data-i18n="popTag">Already asked that?</span>
         </div>
       </div>
-      <label class="switch" title="Turn Recall on or off">
+      <label class="switch" data-i18n-title="shortcutDesc" title="Turn Recall on or off">
         <input type="checkbox" id="enabled" data-setting="enabled" />
         <span aria-hidden="true"></span>
-        <span class="sr">Enabled</span>
+        <span class="sr" data-i18n="shortcutDesc">Turn Recall on or off</span>
       </label>
     </header>
 
-    <section class="stats" aria-label="Your stats">
-      <div><b id="stat-prompts">0</b><span>prompts known</span></div>
-      <div><b id="stat-conversations">0</b><span>chats indexed</span></div>
-      <div><b id="stat-redirects">0</b><span>repeats avoided</span></div>
-      <div><b id="stat-deleted">0</b><span>chats cleaned</span></div>
+    <div class="banner warn" id="health" role="alert" hidden data-i18n="healthWarn" data-testid="health-warning">Recall can’t find ChatGPT’s message box on this page.</div>
+    <div class="banner" id="paused" role="status" hidden data-testid="paused-banner">
+      <span id="paused-text"></span>
+      <button class="small" id="resume" data-i18n="resume">Resume now</button>
+    </div>
+
+    <section class="stats" aria-label="Stats">
+      <div><b id="stat-prompts">0</b><span data-i18n="statPrompts">prompts known</span></div>
+      <div><b id="stat-conversations">0</b><span data-i18n="statChats">chats indexed</span></div>
+      <div><b id="stat-redirects">0</b><span data-i18n="statRedirects">repeats avoided</span></div>
+      <div><b id="stat-deleted">0</b><span data-i18n="statDeleted">chats cleaned</span></div>
     </section>
 
     <section>
-      <h2>Sensitivity</h2>
+      <h2 data-i18n="secSensitivity">Sensitivity</h2>
       <div class="segmented" role="radiogroup" aria-label="Sensitivity" id="presets"></div>
       <p class="hint" id="preset-hint"></p>
     </section>
 
     <section>
-      <h2>Last message you sent</h2>
-      <p class="result" id="last-check" data-testid="last-check">Send a message on ChatGPT and Recall will show here whether it checked it, and why.</p>
+      <h2 data-i18n="secLast">Last message you sent</h2>
+      <p class="result" id="last-check" data-testid="last-check" data-i18n="lastEmpty">Send a message on ChatGPT and Recall will show here whether it checked it, and why.</p>
     </section>
 
     <section>
-      <h2>Would Recall step in?</h2>
+      <h2><label for="test-input" data-i18n="secTester">Would Recall step in?</label></h2>
       <div class="tester">
-        <input id="test-input" type="text" placeholder="Type a prompt to test…" autocomplete="off" />
+        <input id="test-input" type="text" data-i18n-placeholder="testerPh" placeholder="Type a prompt to test…" autocomplete="off" />
       </div>
       <p class="result" id="test-result" aria-live="polite"></p>
     </section>
 
     <section class="actions">
-      <button id="import" class="primary">Learn from my existing chats</button>
-      <button id="cleanup">Clean up old chats</button>
+      <button id="import" class="primary" data-i18n="btnImport">Learn from my existing chats</button>
+      <div class="pair">
+        <button id="cleanup" data-i18n="btnCleanup">Clean up old chats</button>
+        <button id="pause" data-i18n="btnPause" data-testid="pause">Pause for 1 hour</button>
+      </div>
       <p class="hint" id="action-status" aria-live="polite"></p>
     </section>
 
-    <details>
-      <summary>Settings</summary>
-      <label class="row"><input type="checkbox" data-setting="freshnessGuard" /> Skip time-sensitive questions (news, prices, "latest")</label>
-      <label class="row"><input type="checkbox" data-setting="passiveIndexing" /> Learn from chats I open</label>
-      <label class="row"><input type="checkbox" data-setting="cleanupNudge" /> Remind me to clean up stale chats</label>
-      <label class="row"><input type="checkbox" data-setting="showLauncher" /> Show the cleanup button on ChatGPT</label>
-      <label class="row num">Consider chats stale after
-        <input type="number" min="7" max="730" data-setting="staleDays" /> days</label>
+    <details id="settings-box">
+      <summary data-i18n="settings">Settings</summary>
+      <label class="row"><input type="checkbox" data-setting="freshnessGuard" /> <span data-i18n="setFresh">Skip time-sensitive questions (news, prices, “latest”)</span></label>
+      <label class="row"><input type="checkbox" data-setting="passiveIndexing" /> <span data-i18n="setPassive">Learn from chats I open</span></label>
+      <label class="row"><input type="checkbox" data-setting="cleanupNudge" /> <span data-i18n="setNudge">Remind me to clean up stale chats</span></label>
+      <label class="row"><input type="checkbox" data-setting="showLauncher" /> <span data-i18n="setLauncher">Show the cleanup button on ChatGPT</span></label>
+      <label class="row num"><span data-i18n="setStale">Consider chats stale after (days)</span>
+        <input type="number" min="7" max="730" data-setting="staleDays" /></label>
+      <label class="row"><input type="checkbox" data-setting="debug" data-testid="debug" /> <span data-i18n="setDebug">Debug logging (shows prompt text in the browser console)</span></label>
+      <p class="hint" id="shortcut"></p>
       <div class="row buttons">
-        <button id="export" class="small">Export my data</button>
-        <button id="clear" class="small danger-outline">Forget everything</button>
+        <button id="export" class="small" data-i18n="btnExport">Export my data</button>
+        <button id="clear" class="small danger-outline" data-i18n="btnForget">Forget everything</button>
       </div>
+      <p class="hint"><a href="#" id="open-options" data-i18n="openSettingsPage">Open full settings page</a></p>
     </details>
 
-    <footer>🔒 Your history never leaves this device.</footer>
+    <footer data-i18n="footer">🔒 Your history never leaves this device.</footer>
 
     <script src="../lib/umd.js"></script>
+    <script src="../lib/i18n.js"></script>
     <script src="../lib/text.js"></script>
     <script src="../lib/similarity.js"></script>
     <script src="../lib/policy.js"></script>

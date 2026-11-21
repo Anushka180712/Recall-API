@@ -107,6 +107,24 @@
         return next;
       },
 
+      /** Pause Recall for a while (e.g. 1 hour) without switching it off. */
+      async pause(ms, now = Date.now()) {
+        return (await this.setMeta({ pausedUntil: now + ms })).pausedUntil;
+      },
+      async resume() {
+        await this.setMeta({ pausedUntil: 0 });
+      },
+      /** Timestamp the pause ends, or 0 when Recall is not paused. */
+      async getPausedUntil(now = Date.now()) {
+        const { pausedUntil = 0 } = await this.getMeta();
+        return pausedUntil > now ? pausedUntil : 0;
+      },
+
+      /** Whether the content script could find ChatGPT's message box (see the popup's warning). */
+      async setHealth(h) {
+        await this.setMeta({ health: { ...h, at: Date.now() } });
+      },
+
       async getProtected() {
         return new Set(await getOne(local, KEYS.protected, []));
       },

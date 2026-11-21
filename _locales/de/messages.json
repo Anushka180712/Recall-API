@@ -1,0 +1,299 @@
+{
+  "extName": {
+    "message": "Recall – Schon gefragt?"
+  },
+  "extDescription": {
+    "message": "Erkennt, wenn du ChatGPT etwas erneut fragst, und bringt dich zum alten Chat. Dazu Chats mit einem Klick aufräumen."
+  },
+  "dlgTitleOne": {
+    "message": "Das hast du schon gefragt"
+  },
+  "dlgTitleMany": {
+    "message": "Das hast du schon einmal gefragt"
+  },
+  "dlgTitleHere": {
+    "message": "Das hast du in diesem Chat schon gefragt"
+  },
+  "dlgSub": {
+    "message": "Spring zur früheren Antwort zurück, statt neu anzufangen, oder frag erneut für eine neue Antwort."
+  },
+  "dlgSubHere": {
+    "message": "Die Antwort steht schon weiter oben. Spring hin oder frag erneut für eine neue."
+  },
+  "youAsked": {
+    "message": "Du hast gefragt: „{0}“"
+  },
+  "titleMatches": {
+    "message": "Der Chat-Titel passt zu deiner Frage"
+  },
+  "earlierHere": {
+    "message": "Weiter oben in diesem Chat"
+  },
+  "earlierChat": {
+    "message": "Früherer Chat"
+  },
+  "pctMatch": {
+    "message": "{0} % Übereinstimmung"
+  },
+  "openChat": {
+    "message": "Chat öffnen"
+  },
+  "notSame": {
+    "message": "Nicht dasselbe"
+  },
+  "notSameTip": {
+    "message": "Diesen Chat für diese Frage nicht mehr vorschlagen"
+  },
+  "keepEditing": {
+    "message": "Weiter bearbeiten"
+  },
+  "askAnyway": {
+    "message": "Trotzdem fragen"
+  },
+  "takeMeThere": {
+    "message": "Dorthin springen"
+  },
+  "showAnswer": {
+    "message": "Antwort zeigen"
+  },
+  "pause1h": {
+    "message": "Recall 1 Stunde pausieren"
+  },
+  "hintOpen": {
+    "message": "öffnen"
+  },
+  "hintAsk": {
+    "message": "trotzdem fragen"
+  },
+  "hintKeep": {
+    "message": "weiter bearbeiten"
+  },
+  "jumpBadge": {
+    "message": "Hier hast du es gefragt"
+  },
+  "welcome": {
+    "message": "Recall kann aus deinen Chats lernen, um bereits gestellte Fragen zu erkennen. Das dauert ein paar Sekunden, läuft im Hintergrund und bleibt auf diesem Gerät."
+  },
+  "welcomeYes": {
+    "message": "Aus meinen Chats lernen"
+  },
+  "notNow": {
+    "message": "Nicht jetzt"
+  },
+  "reloadMsg": {
+    "message": "Recall wurde aktualisiert oder neu gestartet. Lade diese Seite neu, um es wieder einzuschalten. ChatGPT funktioniert solange normal."
+  },
+  "reloadBtn": {
+    "message": "Seite neu laden"
+  },
+  "later": {
+    "message": "Später"
+  },
+  "importReading": {
+    "message": "Chatliste wird gelesen…"
+  },
+  "importProgress": {
+    "message": "Lerne aus deinen Chats… {0} von {1} (du kannst weiterchatten)"
+  },
+  "importDone": {
+    "message": "Fertig. Recall kennt jetzt {0} Fragen aus {1} Chats ({2} neu)."
+  },
+  "hide": {
+    "message": "Ausblenden"
+  },
+  "close": {
+    "message": "Schließen"
+  },
+  "done": {
+    "message": "Fertig"
+  },
+  "cancel": {
+    "message": "Abbrechen"
+  },
+  "undo": {
+    "message": "Rückgängig"
+  },
+  "cleanTitle": {
+    "message": "Räume deine Chatliste auf"
+  },
+  "cleanLoading": {
+    "message": "Deine Chats werden durchgesehen…"
+  },
+  "cleanFound": {
+    "message": "Recall hat {0} Chats gefunden, die du wahrscheinlich nicht brauchst. Prüfe sie, entferne Häkchen bei allem, was bleiben soll, und lösche dann alles auf einmal."
+  },
+  "cleanEmpty": {
+    "message": "Nichts aufzuräumen. Deine Chatliste ist ordentlich ✨"
+  },
+  "selectAll": {
+    "message": "Alle auswählen"
+  },
+  "selectNone": {
+    "message": "Keine auswählen"
+  },
+  "selectedCount": {
+    "message": "{0} von {1} ausgewählt"
+  },
+  "keepSelected": {
+    "message": "Auswahl behalten"
+  },
+  "deleteBtn": {
+    "message": "{0} löschen…"
+  },
+  "confirmTitle": {
+    "message": "{0} aus ChatGPT löschen?"
+  },
+  "confirmBody": {
+    "message": "Sie verschwinden auf allen Geräten aus deinem Verlauf. Direkt danach kannst du es ein paar Sekunden lang rückgängig machen."
+  },
+  "yesDelete": {
+    "message": "Ja, {0} löschen"
+  },
+  "chatsN": {
+    "message": "{0} Chats"
+  },
+  "chats1": {
+    "message": "1 Chat"
+  },
+  "deletingProgress": {
+    "message": "Lösche {0} / {1}…"
+  },
+  "deletedResult": {
+    "message": "Gelöscht: {0}."
+  },
+  "restoredResult": {
+    "message": "Wiederhergestellt: {0}."
+  },
+  "nudge": {
+    "message": "Du hast {0} Chats, die veraltet wirken (ohne Titel, doppelt oder seit Monaten unberührt). In ein paar Klicks aufräumen?"
+  },
+  "review": {
+    "message": "Ansehen"
+  },
+  "dontAskAgain": {
+    "message": "Nicht mehr fragen"
+  },
+  "pausedUntil": {
+    "message": "Recall ist bis {0} pausiert."
+  },
+  "resume": {
+    "message": "Jetzt fortsetzen"
+  },
+  "launcherTip": {
+    "message": "Recall: Chats aufräumen"
+  },
+  "popTag": {
+    "message": "Schon gefragt?"
+  },
+  "statPrompts": {
+    "message": "Fragen"
+  },
+  "statChats": {
+    "message": "Chats"
+  },
+  "statRedirects": {
+    "message": "Wiederholungen vermieden"
+  },
+  "statDeleted": {
+    "message": "Chats aufgeräumt"
+  },
+  "secSensitivity": {
+    "message": "Empfindlichkeit"
+  },
+  "presetLoose": {
+    "message": "Locker"
+  },
+  "presetBalanced": {
+    "message": "Ausgewogen"
+  },
+  "presetStrict": {
+    "message": "Streng"
+  },
+  "secLast": {
+    "message": "Deine letzte Nachricht"
+  },
+  "lastEmpty": {
+    "message": "Sende eine Nachricht in ChatGPT; hier siehst du, ob Recall sie geprüft hat und warum."
+  },
+  "secTester": {
+    "message": "Würde Recall eingreifen?"
+  },
+  "testerPh": {
+    "message": "Gib eine Frage zum Testen ein…"
+  },
+  "btnImport": {
+    "message": "Aus meinen Chats lernen"
+  },
+  "btnCleanup": {
+    "message": "Alte Chats aufräumen"
+  },
+  "btnPause": {
+    "message": "1 Stunde pausieren"
+  },
+  "settings": {
+    "message": "Einstellungen"
+  },
+  "footer": {
+    "message": "🔒 Dein Verlauf verlässt nie dieses Gerät."
+  },
+  "healthWarn": {
+    "message": "Recall findet das Eingabefeld von ChatGPT nicht. Vielleicht hat sich das Layout geändert; Recall versucht es weiter und stört nicht."
+  },
+  "shortcutDesc": {
+    "message": "Recall ein- oder ausschalten"
+  },
+  "setFresh": {
+    "message": "Zeitkritische Fragen überspringen (News, Preise, „neueste“)"
+  },
+  "setPassive": {
+    "message": "Aus Chats lernen, die ich öffne"
+  },
+  "setNudge": {
+    "message": "Ans Aufräumen alter Chats erinnern"
+  },
+  "setLauncher": {
+    "message": "Aufräum-Knopf auf ChatGPT anzeigen"
+  },
+  "setStale": {
+    "message": "Chats gelten als alt nach (Tagen)"
+  },
+  "setDebug": {
+    "message": "Debug-Protokoll (zeigt Text in der Konsole)"
+  },
+  "btnExport": {
+    "message": "Meine Daten exportieren"
+  },
+  "btnForget": {
+    "message": "Alles vergessen"
+  },
+  "confirmAgain": {
+    "message": "Zum Bestätigen erneut klicken"
+  },
+  "shortcutHint": {
+    "message": "Tastenkürzel: {0}"
+  },
+  "openSettingsPage": {
+    "message": "Einstellungsseite öffnen"
+  },
+  "lastMatch": {
+    "message": "„{0}“ ({1}): Recall hat einen früheren Chat angeboten."
+  },
+  "lastSent": {
+    "message": "„{0}“ ({1}): normal gesendet. {2}"
+  },
+  "testerYes": {
+    "message": "Ja: {0} % Übereinstimmung mit „{1}“."
+  },
+  "testerNo": {
+    "message": "Nein: {0}"
+  },
+  "testerIdle": {
+    "message": "Sieh genau, warum Recall eingreifen würde oder nicht."
+  },
+  "needChatgpt": {
+    "message": "ChatGPT wird geöffnet… dort erneut starten."
+  },
+  "needReload": {
+    "message": "Lade den ChatGPT-Tab neu, damit Recall sich verbindet, und versuch es erneut."
+  }
+}

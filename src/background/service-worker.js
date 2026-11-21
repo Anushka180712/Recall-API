@@ -4,9 +4,24 @@
  *   - seeds default settings on first install, and
  *   - after an install or update, injects the fresh content scripts into
  *     ChatGPT tabs that are already open, so Recall keeps working without the
- *     user having to reload those tabs (the old copy steps aside by itself).
+ *     user having to reload those tabs (the old copy steps aside by itself),
+ *   - handles the keyboard shortcut (Alt+Shift+R by default) that turns Recall
+ *     on or off, and shows "OFF" on the toolbar icon while it is off.
+ *
+ * In Firefox this file runs as a background script with the libraries listed
+ * before it in the manifest, so importScripts is only used when it exists.
  */
-importScripts('../lib/umd.js', '../lib/text.js', '../lib/similarity.js', '../lib/historyIndex.js', '../lib/settings.js', '../lib/store.js');
+if (typeof importScripts === 'function') {
+  importScripts('../lib/umd.js', '../lib/text.js', '../lib/similarity.js', '../lib/historyIndex.js', '../lib/settings.js', '../lib/store.js');
+}
+
+const store = globalThis.Recall.store.createStore();
+
+async function updateBadge() {
+  const { enabled } = await store.getSettings();
+  await chrome.action.setBadgeText({ text: enabled ? '' : 'OFF' });
+  await chrome.action.setBadgeBackgroundColor({ color: '#6b7280' });
+}
 
 async function injectIntoOpenTabs() {
   const [script] = chrome.runtime.getManifest().content_scripts || [];
@@ -22,6 +37,19 @@ async function injectIntoOpenTabs() {
 }
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
-  if (reason === 'install') await globalThis.Recall.store.createStore().saveSettings({});
+  if (reason === 'install') await store.saveSettings({});
   if (reason === 'install' || reason === 'update') await injectIntoOpenTabs();
+  await updateBadge();
+});
+
+chrome.runtime.onStartup.addListener(updateBadge);
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command !== 'toggle-recall') return;
+  const { enabled } = await store.getSettings();
+  await store.saveSettings({ enabled: !enabled });
+});
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes[store.KEYS.settings]) updateBadge().catch(() => {});
 });

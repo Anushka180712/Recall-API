@@ -218,3 +218,42 @@ test('does NOT redirect an exact copy when you ask for a new answer, or for smal
   assert.equal(evaluate(`${p}, a different one`, { conversationId: 'old-chat' }, indexWith(p), S).reason, REASONS.WANTS_NEW_ANSWER);
   assert.equal(evaluate('hello there', {}, indexWith('hello there'), S).reason, REASONS.GENERIC);
 });
+
+// ---------------------------------------------------------------- other languages
+test('does NOT redirect when you ask for a new answer in other languages', () => {
+  for (const p of [
+    'Explícame qué es un closure en JavaScript otra vez',
+    'Dame otra respuesta sobre closures en JavaScript',
+    'Explique les closures en JavaScript encore une fois',
+    'Erkläre Closures in JavaScript noch mal',
+    'Explique closures em JavaScript de novo por favor',
+    'JavaScript closures phir se samjhao',
+    'JavaScript closures क्या है फिर से बताओ',
+    '请重新回答JavaScript闭包是什么',
+    'JavaScriptのクロージャをもう一度説明して',
+    'JavaScript 클로저를 다시 설명해줘',
+  ]) {
+    assert.equal(precheck(p, {}, S), REASONS.WANTS_NEW_ANSWER, p);
+  }
+});
+
+test('treats small talk in other languages as small talk', () => {
+  for (const p of ['¡Hola!', 'Merci beaucoup', 'Danke schön', 'Obrigado', 'shukriya', 'नमस्ते', '谢谢', 'ありがとう', '감사합니다']) {
+    assert.equal(precheck(p, {}, S), REASONS.GENERIC, p);
+  }
+});
+
+test('REDIRECTS: repeats in other languages and scripts', () => {
+  const i = new HistoryIndex();
+  i.add({ conversationId: 'c-es', prompt: '¿Cómo puedo invertir una lista enlazada en Python?' });
+  i.add({ conversationId: 'c-zh', prompt: '什么是JavaScript中的闭包？' });
+  i.add({ conversationId: 'c-hi', prompt: 'पायथन में लिंक्ड लिस्ट को उल्टा कैसे करें' });
+  const ev = (p) => evaluate(p, {}, i, S);
+  assert.equal(ev('como invertir una lista enlazada en python').matches[0]?.conversationId, 'c-es');
+  assert.equal(ev('JavaScript中的闭包是什么').matches[0]?.conversationId, 'c-zh');
+  assert.equal(ev('पायथन में लिंक्ड लिस्ट को उल्टा कैसे करें?').matches[0]?.conversationId, 'c-hi');
+});
+
+test('does NOT redirect while paused', () => {
+  assert.equal(run('reverse a linked list in python', { paused: true }).reason, REASONS.PAUSED);
+});

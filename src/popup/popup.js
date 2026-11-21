@@ -1,10 +1,22 @@
-/* Popup: stats, settings, a live "would Recall step in?" tester and quick actions. */
+/*
+ * Popup (and, opened with ?options=1, the full settings page): stats, settings,
+ * pause, a live "would Recall step in?" tester, the last decision, a health
+ * warning, and quick actions that run in the open ChatGPT tab.
+ */
 (async function () {
   'use strict';
 
-  const { settings: settingsMod, store: storeMod, policy } = globalThis.Recall;
+  const { settings: settingsMod, store: storeMod, policy, i18n } = globalThis.Recall;
+  const { t } = i18n;
   const store = storeMod.createStore();
   const $ = (sel) => document.querySelector(sel);
+
+  i18n.translatePage();
+  const isPage = new URLSearchParams(location.search).has('options');
+  if (isPage) {
+    document.body.classList.add('page');
+    $('#settings-box').open = true;
+  }
 
   let settings = await store.getSettings();
   let index = await store.loadIndex();
@@ -24,11 +36,48 @@
     if (!d) return;
     const el = $('#last-check');
     const mins = Math.round((Date.now() - d.at) / 60000);
-    const when = mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : new Date(d.at).toLocaleString();
-    el.textContent = d.reason === 'match'
-      ? `“${d.prompt}” (${when}): Recall offered an earlier chat.`
-      : `“${d.prompt}” (${when}): sent normally. ${d.explanation}`;
-    el.className = d.reason === 'match' ? 'result yes' : 'result no';
+    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+    const when = mins < 60 ? rtf.format(-mins, 'minute') : new Date(d.at).toLocaleString();
+    const offered = d.reason === 'match' || d.reason === 'repeat-in-this-chat';
+    el.textContent = offered
+      ? t('lastMatch', '“{0}” ({1}): Recall offered an earlier chat.', [d.prompt, when])
+      : t('lastSent', '“{0}” ({1}): sent normally. {2}', [d.prompt, when, d.explanation]);
+    el.className = offered ? 'result yes' : 'result no';
+  }
+
+  // ------------------------------------------------- pause & health
+  async function renderPause() {
+    const until = await store.getPausedUntil();
+    $('#paused').hidden = !until;
+    $('#pause').disabled = !!until;
+    if (until) {
+      const time = new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      $('#paused-text').textContent = t('pausedUntil', 'Recall is paused until {0}.', time);
+    }
+  }
+  $('#pause').addEventListener('click', async () => {
+    await store.pause(60 * 60 * 1000);
+    renderPause();
+  });
+  $('#resume').addEventListener('click', async () => {
+    await store.resume();
+    renderPause();
+  });
+
+  async function renderHealth() {
+    const { health } = await store.getMeta();
+    // Only warn about a recent check: an old failure may already be fixed.
+    $('#health').hidden = !(health && health.composer === false && Date.now() - health.at < 24 * 3600 * 1000);
+  }
+
+  async function renderShortcut() {
+    try {
+      const cmds = await chrome.commands.getAll();
+      const c = cmds.find((x) => x.name === 'toggle-recall');
+      if (c && c.shortcut) $('#shortcut').textContent = `${t('shortcutDesc', 'Turn Recall on or off')}. ${t('shortcutHint', 'Shortcut: {0}', c.shortcut)}`;
+    } catch {
+      /* commands API unavailable (e.g. some browsers): nothing to show */
+    }
   }
 
   // ----------------------------------------------------------- settings
@@ -45,7 +94,7 @@
         const b = document.createElement('button');
         b.type = 'button';
         b.role = 'radio';
-        b.textContent = p.label;
+        b.textContent = t('preset' + p.label, p.label);
         b.setAttribute('aria-checked', String(p.id === active.id));
         b.addEventListener('click', () => save({ threshold: p.threshold }));
         return b;
@@ -72,17 +121,17 @@
     const prompt = $('#test-input').value;
     const out = $('#test-result');
     if (!prompt.trim()) {
-      out.textContent = 'See exactly why Recall would or wouldn’t interrupt.';
+      out.textContent = t('testerIdle', 'See exactly why Recall would or wouldn’t interrupt.');
       out.className = 'result no';
       return;
     }
     const d = policy.evaluate(prompt, {}, index, settings);
     if (d.intercept) {
       const m = d.matches[0];
-      out.textContent = `Yes: ${Math.round(m.score * 100)}% match with “${m.title || m.prompt}”.`;
+      out.textContent = t('testerYes', 'Yes: {0}% match with “{1}”.', [Math.round(m.score * 100), m.title || m.prompt]);
       out.className = 'result yes';
     } else {
-      out.textContent = `No: ${d.explanation}`;
+      out.textContent = t('testerNo', 'No: {0}', d.explanation);
       out.className = 'result no';
     }
   }
@@ -92,23 +141,27 @@
   async function chatgptTab() {
     const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (active && /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//.test(active.url || '')) return active;
-    return null;
+    if (!isPage) return null;
+    // On the full settings page, use any open ChatGPT tab and bring it forward.
+    const [other] = await chrome.tabs.query({ url: ['https://chatgpt.com/*', 'https://chat.openai.com/*'] });
+    if (other) await chrome.tabs.update(other.id, { active: true });
+    return other || null;
   }
 
   async function sendToTab(type, busyText) {
     const status = $('#action-status');
     const tab = await chatgptTab();
     if (!tab) {
-      status.textContent = 'Opening ChatGPT… run this again from there.';
+      status.textContent = t('needChatgpt', 'Opening ChatGPT… run this again from there.');
       await chrome.tabs.create({ url: 'https://chatgpt.com/' });
       return;
     }
     status.textContent = busyText;
     try {
       await chrome.tabs.sendMessage(tab.id, { type });
-      window.close();
+      if (!isPage) window.close();
     } catch {
-      status.textContent = 'Reload the ChatGPT tab once so Recall can connect, then try again.';
+      status.textContent = t('needReload', 'Reload the ChatGPT tab once so Recall can connect, then try again.');
     }
   }
 
@@ -127,10 +180,10 @@
   $('#clear').addEventListener('click', async (e) => {
     if (!clearArmed) {
       clearArmed = true;
-      e.target.textContent = 'Click again to confirm';
+      e.target.textContent = t('confirmAgain', 'Click again to confirm');
       setTimeout(() => {
         clearArmed = false;
-        e.target.textContent = 'Forget everything';
+        e.target.textContent = t('btnForget', 'Forget everything');
       }, 4000);
       return;
     }
@@ -140,8 +193,16 @@
     runTester();
   });
 
+  $('#open-options').addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.runtime.openOptionsPage();
+  });
+
   renderSettings();
   renderStats();
   renderLastCheck();
+  renderPause();
+  renderHealth();
+  renderShortcut();
   runTester();
 })();

@@ -16,6 +16,7 @@
   /** Every possible decision. `intercept: true` only for MATCH. */
   const REASONS = Object.freeze({
     DISABLED: 'disabled',
+    PAUSED: 'paused',
     USER_OVERRIDE: 'user-override',
     TEMPORARY_CHAT: 'temporary-chat',
     HAS_ATTACHMENTS: 'has-attachments',
@@ -34,6 +35,7 @@
 
   const HUMAN = Object.freeze({
     [REASONS.DISABLED]: 'Recall is switched off.',
+    [REASONS.PAUSED]: 'Recall is paused for a while.',
     [REASONS.USER_OVERRIDE]: 'You chose "Ask anyway" for this prompt.',
     [REASONS.TEMPORARY_CHAT]: 'Temporary chats are never checked or stored.',
     [REASONS.HAS_ATTACHMENTS]: 'The prompt has a file or image attached, so the answer depends on it.',
@@ -118,6 +120,39 @@
     'i'
   );
 
+  // The same two signals in other languages. Matched against the normalised
+  // prompt (lower case, accents and punctuation removed), so "¿Otra vez?" is
+  // tested as "otra vez". Boundaries are spaces, because \b only knows ASCII.
+  const words = (list) => new RegExp('(?:^|\\s)(?:' + list.join('|') + ')(?:\\s|$)');
+  const WANTS_NEW_INTL_RE = words([
+    // Spanish / Portuguese
+    'otra vez', 'de nuevo', 'nuevamente', 'otra respuesta', 'respuesta nueva', 'nueva respuesta', 'otra version', 'otro ejemplo',
+    'genera(?:r|me)? (?:otr[ao]|una nueva|algo nuevo)', 'desde cero', 'regenera(?:r)?',
+    'outra vez', 'de novo', 'novamente', 'outra resposta', 'nova resposta', 'resposta nova', 'outra versao', 'do zero', 'gere outra',
+    // French
+    'encore une fois', 'a nouveau', 'de nouveau', 'une autre reponse', 'nouvelle reponse', 'autre version', 'une autre', 'reformule', 'regenere', 'recommence',
+    // German
+    'noch ?mal', 'nochmals', 'erneut', 'neue antwort', 'andere antwort', 'neue version', 'andere version', 'von vorne', 'generiere neu',
+    // Hindi / Hinglish
+    'phir se', 'fir se', 'dobara', 'dubara', 'naya (?:jawab|answer|wala)', 'nayi', 'alag (?:jawab|answer)', 'ek aur',
+    'फिर से', 'दोबारा', 'नया जवाब', 'नया उत्तर', 'अलग जवाब', 'एक और',
+  ]);
+  // Chinese / Japanese / Korean are written without spaces, so matched anywhere.
+  const WANTS_NEW_CJK_RE = /再来一|重新(?:生成|回答|写)|换一个|另一个|もう一度|別の(?:回答|答え)|やり直|다시|새로운 (?:답|답변)/;
+
+  const GENERIC_INTL_RE = new RegExp(
+    '^(?:' +
+      [
+        'hola', 'buenas', 'buenos dias', 'gracias', 'muchas gracias', 'vale', 'si', 'sigue', 'continua', 'ola', 'oi', 'obrigad[oa]',
+        'bonjour', 'salut', 'merci(?: beaucoup)?', 'oui', 'non', 'continue[rz]?', 'd ?accord',
+        'hallo', 'guten (?:morgen|tag|abend)', 'danke(?: schon)?', 'ja', 'nein', 'weiter', 'mach weiter',
+        'namaste', 'namaskar', 'shukriya', 'dhanyavad', 'haan', 'nahi', 'theek hai', 'aage', 'aur batao',
+        'नमस्ते', 'धन्यवाद', 'शुक्रिया', 'हाँ', 'हां', 'नहीं', 'ठीक है', 'आगे',
+        '你好', '谢谢', '继续', 'こんにちは', 'ありがとう', '続けて', '안녕하세요', '감사합니다', '계속',
+      ].join('|') +
+      ')$'
+  );
+
   const CONNECTIVE_RE = /^(?:and|also|now|then|but|so|or)\b/i;
 
   const CODE_FENCE_RE = /```|~~~/;
@@ -134,6 +169,7 @@
    */
   function precheck(prompt, ctx = {}, settings = {}) {
     if (settings.enabled === false) return REASONS.DISABLED;
+    if (ctx.paused) return REASONS.PAUSED;
     if (ctx.bypass) return REASONS.USER_OVERRIDE;
     if (ctx.temporaryChat) return REASONS.TEMPORARY_CHAT;
     if (ctx.hasAttachments) return REASONS.HAS_ATTACHMENTS;
@@ -143,8 +179,10 @@
 
     const norm = text.normalize(raw);
     // Order matters: an explicit "give me a new one" beats every other rule.
-    if (WANTS_NEW_RE.test(raw) || WANTS_NEW_RE.test(norm)) return REASONS.WANTS_NEW_ANSWER;
-    if (GENERIC_RE.test(norm)) return REASONS.GENERIC;
+    if (WANTS_NEW_RE.test(raw) || WANTS_NEW_RE.test(norm) || WANTS_NEW_INTL_RE.test(norm) || WANTS_NEW_CJK_RE.test(raw)) {
+      return REASONS.WANTS_NEW_ANSWER;
+    }
+    if (GENERIC_RE.test(norm) || GENERIC_INTL_RE.test(norm)) return REASONS.GENERIC;
 
     const tokenCount = text.tokenize(raw).length;
 
@@ -173,6 +211,7 @@
    * @param {object} ctx
    * @param {string|null} [ctx.conversationId] chat the user is currently in
    * @param {boolean} [ctx.bypass] user pressed "Ask anyway"
+   * @param {boolean} [ctx.paused] user paused Recall for a while
    * @param {boolean} [ctx.temporaryChat]
    * @param {boolean} [ctx.hasAttachments]
    * @param {(norm: string, convId: string) => boolean} [ctx.isSnoozed]
@@ -226,5 +265,5 @@
     return { intercept, reason, explanation: HUMAN[reason], matches };
   }
 
-  return { REASONS, HUMAN, GENERIC_RE, WANTS_NEW_RE, FRESH_RE, CONTEXTUAL_RE, precheck, evaluate };
+  return { REASONS, HUMAN, GENERIC_RE, GENERIC_INTL_RE, WANTS_NEW_RE, WANTS_NEW_INTL_RE, FRESH_RE, CONTEXTUAL_RE, precheck, evaluate };
 });

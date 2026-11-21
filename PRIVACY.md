@@ -12,7 +12,8 @@ old chats. It is built to work entirely on your device.
 | Text of prompts you sent or viewed on ChatGPT (max 400 characters each, max 5,000 prompts) and chat titles/ids | `chrome.storage.local` on your device | To recognise repeat questions. |
 | Usage counters (repeats avoided, chats cleaned) | `chrome.storage.local` | Shown in the popup. |
 | "Not the same" choices and chats you chose to keep | `chrome.storage.local` | So Recall respects your choices. |
-| Settings (on/off, sensitivity, reminder preferences) | `chrome.storage.sync` | So your preferences follow your Chrome profile. Contains no chat content. |
+| A pause end time, the last check's reason (with the first 80 characters of that prompt), and whether ChatGPT's message box was found | `chrome.storage.local` | Shown in the popup so you can see what Recall did and why. |
+| Settings (on/off, sensitivity, reminder preferences, debug logging) | `chrome.storage.sync` | So your preferences follow your Chrome profile. Contains no chat content. |
 
 Prompts typed in ChatGPT **temporary chats** are never stored.
 
@@ -25,6 +26,12 @@ When *you* choose to import your history or delete chats, Recall makes requests 
 chat.openai.com) from your open ChatGPT tab, using your existing signed-in session, in the same way the ChatGPT
 website does. These requests go only to ChatGPT.
 
+## Logs
+
+Recall writes warnings to your browser's developer console only. Prompt text is never logged unless you turn on
+**Debug logging** in Recall's settings, and even then it stays in your own browser's console. Logs are never sent
+anywhere.
+
 ## Your controls
 
 - **Export my data** (popup → Settings) downloads everything Recall stores as a JSON file.
@@ -36,6 +43,8 @@ website does. These requests go only to ChatGPT.
 - `storage`: to save the data described above on your device.
 - `scripting`: after an update, to re-attach Recall to ChatGPT tabs that are already open (only ChatGPT tabs).
 - Host access to `https://chatgpt.com/*` and `https://chat.openai.com/*`: to run on ChatGPT, and nowhere else.
+
+- The keyboard shortcut (`commands`, no permission prompt) only switches Recall on or off.
 
 ## Contact
 

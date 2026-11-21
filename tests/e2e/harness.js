@@ -31,6 +31,8 @@ class MockServer {
     this.conversations = new Map();
     this.sends = [];
     this.deleted = [];
+    this.restored = [];
+    this.hidden = new Map();
     this.nextId = 1;
     for (const c of seed) this.addConversation(c);
   }
@@ -71,11 +73,20 @@ class MockServer {
     if (m) {
       const c = this.conversations.get(m[1]);
       if (req.method() === 'PATCH') {
+        // Like ChatGPT, "delete" only hides a chat, so it can be restored.
         if (this.refuseDelete && this.refuseDelete.has(m[1])) return json({ detail: 'forbidden' }, 403);
-        if (!c) return json({}, 404);
-        if (JSON.parse(req.postData() || '{}').is_visible === false) {
+        const visible = JSON.parse(req.postData() || '{}').is_visible;
+        if (visible === false) {
+          if (!c) return json({}, 404);
           this.conversations.delete(m[1]);
+          this.hidden.set(m[1], c);
           this.deleted.push(m[1]);
+        } else if (visible === true) {
+          const h = this.hidden.get(m[1]);
+          if (!h) return json({}, 404);
+          this.hidden.delete(m[1]);
+          this.conversations.set(m[1], h);
+          this.restored.push(m[1]);
         }
         return json({ success: true });
       }

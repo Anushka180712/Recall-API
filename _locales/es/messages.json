@@ -1,0 +1,299 @@
+{
+  "extName": {
+    "message": "Recall – ¿Ya lo preguntaste?"
+  },
+  "extDescription": {
+    "message": "Detecta cuando vas a preguntar a ChatGPT algo que ya preguntaste y te lleva a ese chat. Y limpia chats con un clic."
+  },
+  "dlgTitleOne": {
+    "message": "Ya preguntaste esto"
+  },
+  "dlgTitleMany": {
+    "message": "Ya has preguntado esto antes"
+  },
+  "dlgTitleHere": {
+    "message": "Ya preguntaste esto en este chat"
+  },
+  "dlgSub": {
+    "message": "Vuelve a la respuesta anterior en lugar de empezar de nuevo, o pregunta otra vez para obtener una nueva."
+  },
+  "dlgSubHere": {
+    "message": "La respuesta ya está arriba. Ve a ella o pregunta otra vez si quieres una nueva."
+  },
+  "youAsked": {
+    "message": "Preguntaste: «{0}»"
+  },
+  "titleMatches": {
+    "message": "El título del chat coincide con tu pregunta"
+  },
+  "earlierHere": {
+    "message": "Antes en este chat"
+  },
+  "earlierChat": {
+    "message": "Chat anterior"
+  },
+  "pctMatch": {
+    "message": "{0}% de coincidencia"
+  },
+  "openChat": {
+    "message": "Abrir chat"
+  },
+  "notSame": {
+    "message": "No es lo mismo"
+  },
+  "notSameTip": {
+    "message": "No sugerir este chat para esta pregunta otra vez"
+  },
+  "keepEditing": {
+    "message": "Seguir editando"
+  },
+  "askAnyway": {
+    "message": "Preguntar igualmente"
+  },
+  "takeMeThere": {
+    "message": "Llévame allí"
+  },
+  "showAnswer": {
+    "message": "Muéstrame la respuesta"
+  },
+  "pause1h": {
+    "message": "Pausar Recall 1 hora"
+  },
+  "hintOpen": {
+    "message": "abrir"
+  },
+  "hintAsk": {
+    "message": "preguntar igualmente"
+  },
+  "hintKeep": {
+    "message": "seguir editando"
+  },
+  "jumpBadge": {
+    "message": "Lo preguntaste aquí"
+  },
+  "welcome": {
+    "message": "Recall puede aprender de tus chats para detectar preguntas que ya hiciste. Tarda unos segundos, funciona en segundo plano y todo se queda en este dispositivo."
+  },
+  "welcomeYes": {
+    "message": "Aprender de mis chats"
+  },
+  "notNow": {
+    "message": "Ahora no"
+  },
+  "reloadMsg": {
+    "message": "Recall se actualizó o reinició. Recarga esta página para activarlo de nuevo. Mientras tanto ChatGPT funciona con normalidad."
+  },
+  "reloadBtn": {
+    "message": "Recargar página"
+  },
+  "later": {
+    "message": "Más tarde"
+  },
+  "importReading": {
+    "message": "Leyendo tu lista de chats…"
+  },
+  "importProgress": {
+    "message": "Aprendiendo de tus chats… {0} de {1} (puedes seguir chateando)"
+  },
+  "importDone": {
+    "message": "Listo. Recall conoce {0} preguntas de {1} chats ({2} nuevas)."
+  },
+  "hide": {
+    "message": "Ocultar"
+  },
+  "close": {
+    "message": "Cerrar"
+  },
+  "done": {
+    "message": "Listo"
+  },
+  "cancel": {
+    "message": "Cancelar"
+  },
+  "undo": {
+    "message": "Deshacer"
+  },
+  "cleanTitle": {
+    "message": "Ordena tu lista de chats"
+  },
+  "cleanLoading": {
+    "message": "Revisando tus chats…"
+  },
+  "cleanFound": {
+    "message": "Recall encontró {0} chats que probablemente no necesitas. Revisa, desmarca lo que quieras conservar y elimínalos de una vez."
+  },
+  "cleanEmpty": {
+    "message": "Nada que limpiar. Tu lista de chats está ordenada ✨"
+  },
+  "selectAll": {
+    "message": "Seleccionar todo"
+  },
+  "selectNone": {
+    "message": "No seleccionar"
+  },
+  "selectedCount": {
+    "message": "{0} de {1} seleccionados"
+  },
+  "keepSelected": {
+    "message": "Conservar seleccionados"
+  },
+  "deleteBtn": {
+    "message": "Eliminar {0}…"
+  },
+  "confirmTitle": {
+    "message": "¿Eliminar {0} de ChatGPT?"
+  },
+  "confirmBody": {
+    "message": "Desaparecen de tu historial en todos tus dispositivos. Podrás deshacerlo durante unos segundos justo después."
+  },
+  "yesDelete": {
+    "message": "Sí, eliminar {0}"
+  },
+  "chatsN": {
+    "message": "{0} chats"
+  },
+  "chats1": {
+    "message": "1 chat"
+  },
+  "deletingProgress": {
+    "message": "Eliminando {0} / {1}…"
+  },
+  "deletedResult": {
+    "message": "Eliminados: {0}."
+  },
+  "restoredResult": {
+    "message": "Restaurados: {0}."
+  },
+  "nudge": {
+    "message": "Tienes {0} chats que parecen olvidados (sin título, duplicados o sin abrir en meses). ¿Los limpias en unos clics?"
+  },
+  "review": {
+    "message": "Revisar"
+  },
+  "dontAskAgain": {
+    "message": "No volver a preguntar"
+  },
+  "pausedUntil": {
+    "message": "Recall está en pausa hasta las {0}."
+  },
+  "resume": {
+    "message": "Reanudar ahora"
+  },
+  "launcherTip": {
+    "message": "Recall: limpiar chats"
+  },
+  "popTag": {
+    "message": "¿Ya lo preguntaste?"
+  },
+  "statPrompts": {
+    "message": "preguntas"
+  },
+  "statChats": {
+    "message": "chats"
+  },
+  "statRedirects": {
+    "message": "repeticiones evitadas"
+  },
+  "statDeleted": {
+    "message": "chats limpiados"
+  },
+  "secSensitivity": {
+    "message": "Sensibilidad"
+  },
+  "presetLoose": {
+    "message": "Amplia"
+  },
+  "presetBalanced": {
+    "message": "Equilibrada"
+  },
+  "presetStrict": {
+    "message": "Estricta"
+  },
+  "secLast": {
+    "message": "Último mensaje enviado"
+  },
+  "lastEmpty": {
+    "message": "Envía un mensaje en ChatGPT y aquí verás si Recall lo revisó y por qué."
+  },
+  "secTester": {
+    "message": "¿Intervendría Recall?"
+  },
+  "testerPh": {
+    "message": "Escribe una pregunta para probar…"
+  },
+  "btnImport": {
+    "message": "Aprender de mis chats"
+  },
+  "btnCleanup": {
+    "message": "Limpiar chats antiguos"
+  },
+  "btnPause": {
+    "message": "Pausar 1 hora"
+  },
+  "settings": {
+    "message": "Ajustes"
+  },
+  "footer": {
+    "message": "🔒 Tu historial nunca sale de este dispositivo."
+  },
+  "healthWarn": {
+    "message": "Recall no encuentra el cuadro de mensaje de ChatGPT. Puede que ChatGPT haya cambiado su diseño; Recall seguirá intentándolo sin molestarte."
+  },
+  "shortcutDesc": {
+    "message": "Activar o desactivar Recall"
+  },
+  "setFresh": {
+    "message": "Omitir preguntas que dependen de la fecha (noticias, precios, “lo último”)"
+  },
+  "setPassive": {
+    "message": "Aprender de los chats que abro"
+  },
+  "setNudge": {
+    "message": "Recordarme limpiar chats viejos"
+  },
+  "setLauncher": {
+    "message": "Mostrar el botón de limpieza en ChatGPT"
+  },
+  "setStale": {
+    "message": "Considerar un chat viejo después de (días)"
+  },
+  "setDebug": {
+    "message": "Registro de depuración (muestra el texto en la consola)"
+  },
+  "btnExport": {
+    "message": "Exportar mis datos"
+  },
+  "btnForget": {
+    "message": "Olvidar todo"
+  },
+  "confirmAgain": {
+    "message": "Haz clic otra vez para confirmar"
+  },
+  "shortcutHint": {
+    "message": "Atajo: {0}"
+  },
+  "openSettingsPage": {
+    "message": "Abrir la página de ajustes"
+  },
+  "lastMatch": {
+    "message": "«{0}» ({1}): Recall ofreció un chat anterior."
+  },
+  "lastSent": {
+    "message": "«{0}» ({1}): enviado normalmente. {2}"
+  },
+  "testerYes": {
+    "message": "Sí: {0}% de coincidencia con «{1}»."
+  },
+  "testerNo": {
+    "message": "No: {0}"
+  },
+  "testerIdle": {
+    "message": "Mira exactamente por qué Recall intervendría o no."
+  },
+  "needChatgpt": {
+    "message": "Abriendo ChatGPT… vuelve a intentarlo desde allí."
+  },
+  "needReload": {
+    "message": "Recarga la pestaña de ChatGPT para que Recall se conecte y vuelve a intentarlo."
+  }
+}

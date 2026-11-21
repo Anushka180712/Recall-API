@@ -171,3 +171,13 @@ test('deleting a chat that is already gone (404) counts as done; other errors ar
   assert.equal(res.failed[0].id, 'blocked');
   assert.match(res.failed[0].error, /refused the request \(403\)/);
 });
+
+test('restoreMany (undo) sends PATCH is_visible:true and reports failures per chat', async () => {
+  const srv = fakeServer({ failDelete: ['c1'] });
+  const api = createClient({ fetch: srv.fetch });
+  const res = await api.restoreMany(['c0', 'c1']);
+  assert.deepEqual(res.restored, ['c0']);
+  assert.equal(res.failed[0].id, 'c1');
+  const patch = srv.calls.find((c) => c.method === 'PATCH');
+  assert.deepEqual(JSON.parse(patch.body), { is_visible: true });
+});

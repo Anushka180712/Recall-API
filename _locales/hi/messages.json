@@ -1,0 +1,299 @@
+{
+  "extName": {
+    "message": "Recall – पहले पूछ चुके हैं?"
+  },
+  "extDescription": {
+    "message": "जब आप ChatGPT से वही सवाल दोबारा पूछने वाले हों, तो यह आपको पुरानी चैट पर ले जाता है। साथ में एक क्लिक में चैट सफ़ाई।"
+  },
+  "dlgTitleOne": {
+    "message": "आप यह पहले पूछ चुके हैं"
+  },
+  "dlgTitleMany": {
+    "message": "आप यह पहले भी पूछ चुके हैं"
+  },
+  "dlgTitleHere": {
+    "message": "आप यह इसी चैट में पूछ चुके हैं"
+  },
+  "dlgSub": {
+    "message": "नए सिरे से शुरू करने के बजाय पुराने जवाब पर जाएँ, या नया जवाब पाने के लिए फिर से पूछें।"
+  },
+  "dlgSubHere": {
+    "message": "जवाब ऊपर ही है। उस पर जाएँ, या नया जवाब चाहिए तो फिर से पूछें।"
+  },
+  "youAsked": {
+    "message": "आपने पूछा था: “{0}”"
+  },
+  "titleMatches": {
+    "message": "चैट का शीर्षक आपके सवाल से मिलता है"
+  },
+  "earlierHere": {
+    "message": "इसी चैट में पहले"
+  },
+  "earlierChat": {
+    "message": "पुरानी चैट"
+  },
+  "pctMatch": {
+    "message": "{0}% मिलान"
+  },
+  "openChat": {
+    "message": "चैट खोलें"
+  },
+  "notSame": {
+    "message": "यह वही नहीं है"
+  },
+  "notSameTip": {
+    "message": "इस सवाल के लिए यह चैट दोबारा न सुझाएँ"
+  },
+  "keepEditing": {
+    "message": "लिखना जारी रखें"
+  },
+  "askAnyway": {
+    "message": "फिर भी पूछें"
+  },
+  "takeMeThere": {
+    "message": "वहाँ ले चलें"
+  },
+  "showAnswer": {
+    "message": "जवाब दिखाएँ"
+  },
+  "pause1h": {
+    "message": "Recall को 1 घंटे के लिए रोकें"
+  },
+  "hintOpen": {
+    "message": "खोलें"
+  },
+  "hintAsk": {
+    "message": "फिर भी पूछें"
+  },
+  "hintKeep": {
+    "message": "लिखते रहें"
+  },
+  "jumpBadge": {
+    "message": "आपने यह यहाँ पूछा था"
+  },
+  "welcome": {
+    "message": "Recall आपकी मौजूदा चैट से सीख सकता है ताकि दोहराए गए सवाल पहचान सके। इसमें कुछ सेकंड लगते हैं, यह बैकग्राउंड में चलता है और सब कुछ इसी डिवाइस पर रहता है।"
+  },
+  "welcomeYes": {
+    "message": "मेरी चैट से सीखें"
+  },
+  "notNow": {
+    "message": "अभी नहीं"
+  },
+  "reloadMsg": {
+    "message": "Recall अपडेट या रीस्टार्ट हुआ है। इसे फिर चालू करने के लिए यह पेज रीलोड करें। तब तक ChatGPT सामान्य रूप से चलता रहेगा।"
+  },
+  "reloadBtn": {
+    "message": "पेज रीलोड करें"
+  },
+  "later": {
+    "message": "बाद में"
+  },
+  "importReading": {
+    "message": "आपकी चैट सूची पढ़ी जा रही है…"
+  },
+  "importProgress": {
+    "message": "आपकी चैट से सीख रहा है… {1} में से {0} (आप चैट जारी रख सकते हैं)"
+  },
+  "importDone": {
+    "message": "हो गया। Recall अब {1} चैट से {0} सवाल जानता है ({2} नए)।"
+  },
+  "hide": {
+    "message": "छिपाएँ"
+  },
+  "close": {
+    "message": "बंद करें"
+  },
+  "done": {
+    "message": "हो गया"
+  },
+  "cancel": {
+    "message": "रद्द करें"
+  },
+  "undo": {
+    "message": "पूर्ववत करें"
+  },
+  "cleanTitle": {
+    "message": "अपनी चैट सूची साफ़ करें"
+  },
+  "cleanLoading": {
+    "message": "आपकी चैट देखी जा रही हैं…"
+  },
+  "cleanFound": {
+    "message": "Recall को {0} ऐसी चैट मिलीं जिनकी शायद आपको ज़रूरत नहीं। देखें, जो रखनी हैं उनका निशान हटाएँ, फिर एक साथ हटाएँ।"
+  },
+  "cleanEmpty": {
+    "message": "साफ़ करने को कुछ नहीं। आपकी चैट सूची साफ़-सुथरी है ✨"
+  },
+  "selectAll": {
+    "message": "सभी चुनें"
+  },
+  "selectNone": {
+    "message": "कोई नहीं"
+  },
+  "selectedCount": {
+    "message": "{1} में से {0} चुनी गईं"
+  },
+  "keepSelected": {
+    "message": "चुनी हुई रखें"
+  },
+  "deleteBtn": {
+    "message": "{0} हटाएँ…"
+  },
+  "confirmTitle": {
+    "message": "ChatGPT से {0} हटाएँ?"
+  },
+  "confirmBody": {
+    "message": "ये आपके हर डिवाइस के इतिहास से हट जाएँगी। ठीक बाद कुछ सेकंड तक आप इसे पूर्ववत कर सकते हैं।"
+  },
+  "yesDelete": {
+    "message": "हाँ, {0} हटाएँ"
+  },
+  "chatsN": {
+    "message": "{0} चैट"
+  },
+  "chats1": {
+    "message": "1 चैट"
+  },
+  "deletingProgress": {
+    "message": "हटाया जा रहा है {0} / {1}…"
+  },
+  "deletedResult": {
+    "message": "हटाई गईं: {0}।"
+  },
+  "restoredResult": {
+    "message": "वापस लाई गईं: {0}।"
+  },
+  "nudge": {
+    "message": "आपकी {0} चैट पुरानी लगती हैं (बिना शीर्षक, दोहराई गई या महीनों से न खोली गई)। कुछ क्लिक में साफ़ करें?"
+  },
+  "review": {
+    "message": "देखें"
+  },
+  "dontAskAgain": {
+    "message": "दोबारा न पूछें"
+  },
+  "pausedUntil": {
+    "message": "Recall {0} तक रुका हुआ है।"
+  },
+  "resume": {
+    "message": "अभी चालू करें"
+  },
+  "launcherTip": {
+    "message": "Recall: चैट साफ़ करें"
+  },
+  "popTag": {
+    "message": "पहले पूछ चुके हैं?"
+  },
+  "statPrompts": {
+    "message": "सवाल"
+  },
+  "statChats": {
+    "message": "चैट"
+  },
+  "statRedirects": {
+    "message": "दोहराव टले"
+  },
+  "statDeleted": {
+    "message": "चैट साफ़ हुईं"
+  },
+  "secSensitivity": {
+    "message": "संवेदनशीलता"
+  },
+  "presetLoose": {
+    "message": "ढीला"
+  },
+  "presetBalanced": {
+    "message": "संतुलित"
+  },
+  "presetStrict": {
+    "message": "सख़्त"
+  },
+  "secLast": {
+    "message": "आपका पिछला संदेश"
+  },
+  "lastEmpty": {
+    "message": "ChatGPT पर संदेश भेजें, Recall यहाँ बताएगा कि उसने जाँचा या नहीं, और क्यों।"
+  },
+  "secTester": {
+    "message": "क्या Recall रोकेगा?"
+  },
+  "testerPh": {
+    "message": "जाँचने के लिए सवाल लिखें…"
+  },
+  "btnImport": {
+    "message": "मेरी मौजूदा चैट से सीखें"
+  },
+  "btnCleanup": {
+    "message": "पुरानी चैट साफ़ करें"
+  },
+  "btnPause": {
+    "message": "1 घंटे रोकें"
+  },
+  "settings": {
+    "message": "सेटिंग्स"
+  },
+  "footer": {
+    "message": "🔒 आपका इतिहास कभी इस डिवाइस से बाहर नहीं जाता।"
+  },
+  "healthWarn": {
+    "message": "Recall को इस पेज पर ChatGPT का मैसेज बॉक्स नहीं मिल रहा। शायद ChatGPT का डिज़ाइन बदला है; Recall कोशिश करता रहेगा और आपको नहीं रोकेगा।"
+  },
+  "shortcutDesc": {
+    "message": "Recall चालू या बंद करें"
+  },
+  "setFresh": {
+    "message": "समय पर निर्भर सवाल छोड़ें (ख़बरें, दाम, “लेटेस्ट”)"
+  },
+  "setPassive": {
+    "message": "जो चैट मैं खोलूँ उनसे सीखें"
+  },
+  "setNudge": {
+    "message": "पुरानी चैट साफ़ करने की याद दिलाएँ"
+  },
+  "setLauncher": {
+    "message": "ChatGPT पर सफ़ाई बटन दिखाएँ"
+  },
+  "setStale": {
+    "message": "इतने दिन बाद चैट पुरानी मानें"
+  },
+  "setDebug": {
+    "message": "डिबग लॉग (कंसोल में प्रॉम्प्ट दिखाता है)"
+  },
+  "btnExport": {
+    "message": "मेरा डेटा एक्सपोर्ट करें"
+  },
+  "btnForget": {
+    "message": "सब कुछ भूल जाएँ"
+  },
+  "confirmAgain": {
+    "message": "पुष्टि के लिए फिर क्लिक करें"
+  },
+  "shortcutHint": {
+    "message": "शॉर्टकट: {0}"
+  },
+  "openSettingsPage": {
+    "message": "पूरा सेटिंग्स पेज खोलें"
+  },
+  "lastMatch": {
+    "message": "“{0}” ({1}): Recall ने पुरानी चैट सुझाई।"
+  },
+  "lastSent": {
+    "message": "“{0}” ({1}): सामान्य रूप से भेजा गया। {2}"
+  },
+  "testerYes": {
+    "message": "हाँ: “{1}” से {0}% मिलान।"
+  },
+  "testerNo": {
+    "message": "नहीं: {0}"
+  },
+  "testerIdle": {
+    "message": "देखें कि Recall क्यों रोकेगा या नहीं रोकेगा।"
+  },
+  "needChatgpt": {
+    "message": "ChatGPT खुल रहा है… वहाँ से फिर चलाएँ।"
+  },
+  "needReload": {
+    "message": "ChatGPT टैब एक बार रीलोड करें ताकि Recall जुड़ सके, फिर कोशिश करें।"
+  }
+}

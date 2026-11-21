@@ -79,6 +79,9 @@
     background: var(--bg); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
     padding: 14px; animation: pop .16s ease-out; }
   .toast p { color: var(--fg); margin-bottom: 10px; }
+  .pin { position: absolute; pointer-events: none; background: var(--accent); color: var(--accent-fg);
+    font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; box-shadow: 0 4px 14px rgba(79,70,229,.35);
+    animation: pop .16s ease-out; white-space: nowrap; }
   .launcher { position: absolute; right: 18px; bottom: 140px; pointer-events: auto; width: 40px; height: 40px;
     padding: 0; border-radius: 50%; display: grid; place-items: center; background: var(--accent);
     color: var(--accent-fg); border: none; box-shadow: 0 6px 18px rgba(79, 70, 229, .35); opacity: .85; }
@@ -91,6 +94,11 @@
   `;
 
   const LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>';
+
+  // Translated UI text (see src/lib/i18n.js); English is the fallback.
+  const t = (key, fallback, subs) => (root.Recall && root.Recall.i18n ? root.Recall.i18n.t(key, fallback, subs) : fallback);
+  const chats = (n) => (n === 1 ? t('chats1', '1 chat') : t('chatsN', '{0} chats', n));
+  const pct = (score) => t('pctMatch', '{0}% match', Math.round(score * 100));
 
   /** Minimal hyperscript helper. Children may be strings (inserted as text) or nodes. */
   function h(tag, attrs = {}, ...children) {
@@ -105,16 +113,22 @@
     return el;
   }
 
+  // "yesterday", "hace 3 días", "il y a 2 mois"... in the browser's language.
+  let rtf;
   function relTime(ms) {
     if (!ms) return '';
+    try {
+      rtf = rtf || new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+    } catch {
+      rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+    }
     const d = Math.round((Date.now() - ms) / 86400000);
-    if (d <= 0) return 'today';
-    if (d === 1) return 'yesterday';
-    if (d < 30) return `${d} days ago`;
-    const plural = (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
-    if (d < 365) return plural(Math.max(1, Math.round(d / 30)), 'month');
-    return plural(Math.round(d / 365), 'year');
+    if (d < 30) return rtf.format(-Math.max(0, d), 'day');
+    if (d < 365) return rtf.format(-Math.max(1, Math.round(d / 30)), 'month');
+    return rtf.format(-Math.round(d / 365), 'year');
   }
+
+  const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
   class Overlay {
     constructor() {
@@ -176,9 +190,18 @@
         e.preventDefault();
         e.stopPropagation();
         fn();
+      } else if (e.key === 'Tab') {
+        // Keep keyboard focus inside the dialog (Tab / Shift+Tab wrap around).
+        e.preventDefault();
+        e.stopPropagation();
+        const items = [...this.modal.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+        if (!items.length) return;
+        const i = items.indexOf(this.shadow.activeElement);
+        const next = e.shiftKey ? (i <= 0 ? items.length - 1 : i - 1) : (i + 1) % items.length;
+        items[next].focus();
       } else if (!inside) {
         e.stopPropagation();
-        if (e.key !== 'Tab') e.preventDefault();
+        e.preventDefault();
       }
     }
 
@@ -201,43 +224,46 @@
       const here = !!(top && top.sameChat);
       const items = here
         ? [h('li', { class: 'match', 'data-testid': 'recall-match' },
-            h('div', { class: 'title' }, 'Earlier in this chat'),
-            h('div', { class: 'prompt' }, `You asked: “${top.prompt}”`),
+            h('div', { class: 'title' }, t('earlierHere', 'Earlier in this chat')),
+            h('div', { class: 'prompt' }, t('youAsked', 'You asked: “{0}”', top.prompt)),
             h('div', { class: 'meta' }, ''),
-            h('div', { class: 'side' }, h('span', { class: 'pct' }, `${Math.round(top.score * 100)}% match`)))]
+            h('div', { class: 'side' }, h('span', { class: 'pct' }, pct(top.score))))]
         : o.matches.map((m, i) =>
         h('li', { class: 'match', 'data-testid': 'recall-match' },
-          h('div', { class: 'title' }, m.title || 'Earlier chat'),
-          h('div', { class: 'prompt' }, m.source === 'title' ? 'The chat’s title matches your question' : `You asked: “${m.prompt}”`),
+          h('div', { class: 'title' }, m.title || t('earlierChat', 'Earlier chat')),
+          h('div', { class: 'prompt' }, m.source === 'title' ? t('titleMatches', 'The chat’s title matches your question') : t('youAsked', 'You asked: “{0}”', m.prompt)),
           h('div', { class: 'meta' }, relTime(m.createdAt)),
           h('div', { class: 'side' },
-            h('span', { class: 'pct', title: 'Similarity' }, `${Math.round(m.score * 100)}% match`),
+            h('span', { class: 'pct' }, pct(m.score)),
             h('button', {
               class: i === 0 ? 'primary small' : 'small',
               'data-testid': i === 0 ? 'recall-open' : 'recall-open-alt',
               onclick: done(o.onOpen, m),
-            }, 'Open chat'),
-            h('button', { class: 'link small', 'data-testid': 'recall-not-helpful', onclick: done(o.onNotHelpful, m), title: 'Don’t suggest this chat for this question again' }, 'Not the same')
+            }, t('openChat', 'Open chat')),
+            h('button', { class: 'link small', 'data-testid': 'recall-not-helpful', onclick: done(o.onNotHelpful, m), title: t('notSameTip', 'Don’t suggest this chat for this question again') }, t('notSame', 'Not the same'))
           )
         )
       );
 
       const card = h('div', { class: 'card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'recall-title', tabindex: '-1', 'data-testid': 'recall-dialog' },
         h('div', { class: 'brand', html: LOGO }, 'Recall'),
-        h('h2', { id: 'recall-title' }, here ? 'You already asked this in this chat' : o.matches.length > 1 ? 'You’ve asked this before' : 'You already asked this'),
+        h('h2', { id: 'recall-title' }, here ? t('dlgTitleHere', 'You already asked this in this chat') : o.matches.length > 1 ? t('dlgTitleMany', 'You’ve asked this before') : t('dlgTitleOne', 'You already asked this')),
         h('p', {}, here
-          ? 'The answer is already above. Jump to it, or ask again if you want a new one.'
-          : 'Jump back to the earlier answer instead of starting over, or ask again for a new one.'),
+          ? t('dlgSubHere', 'The answer is already above. Jump to it, or ask again if you want a new one.')
+          : t('dlgSub', 'Jump back to the earlier answer instead of starting over, or ask again for a new one.')),
         h('div', { class: 'you' }, o.prompt),
         h('ul', { class: 'matches' }, items),
         h('div', { class: 'row split' },
-          h('button', { class: 'link', onclick: done(o.onCancel), 'data-testid': 'recall-cancel' }, 'Keep editing'),
+          h('button', { class: 'link', onclick: done(o.onCancel), 'data-testid': 'recall-cancel' }, t('keepEditing', 'Keep editing')),
           h('div', { class: 'row' },
-            h('button', { onclick: done(o.onAskAnyway), 'data-testid': 'recall-ask-anyway' }, 'Ask anyway'),
-            h('button', { class: 'primary', onclick: done(o.onOpen, top), 'data-testid': 'recall-open-top' }, here ? 'Show me the answer' : 'Take me there')
+            h('button', { onclick: done(o.onAskAnyway), 'data-testid': 'recall-ask-anyway' }, t('askAnyway', 'Ask anyway')),
+            h('button', { class: 'primary', onclick: done(o.onOpen, top), 'data-testid': 'recall-open-top' }, here ? t('showAnswer', 'Show me the answer') : t('takeMeThere', 'Take me there'))
           )
         ),
-        h('div', { class: 'hint' }, h('kbd', {}, 'O'), ' open  ·  ', h('kbd', {}, 'A'), ' ask anyway  ·  ', h('kbd', {}, 'Esc'), ' keep editing')
+        h('div', { class: 'hint' },
+          h('kbd', {}, 'O'), ' ', t('hintOpen', 'open'), '  ·  ', h('kbd', {}, 'A'), ' ', t('hintAsk', 'ask anyway'), '  ·  ',
+          h('kbd', {}, 'Esc'), ' ', t('hintKeep', 'keep editing'),
+          o.onPause ? h('span', {}, '  ·  ', h('button', { class: 'link small', onclick: done(o.onPause), 'data-testid': 'recall-pause' }, t('pause1h', 'Pause Recall for 1 hour'))) : '')
       );
 
       this.openModal(card, { o: done(o.onOpen, top), a: done(o.onAskAnyway), Escape: done(o.onCancel) });
@@ -252,10 +278,10 @@
      * @param {(id: string) => string} o.urlFor
      */
     async showCleanup(o) {
-      const body = h('div', {}, h('div', { class: 'status' }, 'Looking through your chats…'));
+      const body = h('div', {}, h('div', { class: 'status' }, t('cleanLoading', 'Looking through your chats…')));
       const card = h('div', { class: 'card wide', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'recall-clean-title', tabindex: '-1', 'data-testid': 'recall-cleanup' },
         h('div', { class: 'brand', html: LOGO }, 'Recall · Cleanup'),
-        h('h2', { id: 'recall-clean-title' }, 'Tidy up your chat list'),
+        h('h2', { id: 'recall-clean-title' }, t('cleanTitle', 'Tidy up your chat list')),
         body
       );
       const close = () => this.closeModal();
@@ -265,31 +291,31 @@
       try {
         data = await o.load();
       } catch (err) {
-        body.replaceChildren(h('div', { class: 'status err' }, `Couldn’t load your chats: ${err.message}`), h('div', { class: 'row' }, h('button', { onclick: close }, 'Close')));
+        body.replaceChildren(h('div', { class: 'status err' }, err.message), h('div', { class: 'row' }, h('button', { onclick: close }, t('close', 'Close'))));
         return;
       }
       if (!this.modal) return;
 
       const { suggestions, canDelete, note } = data;
       if (!suggestions.length) {
-        body.replaceChildren(h('div', { class: 'empty', 'data-testid': 'recall-clean-empty' }, 'Nothing to clean up. Your chat list looks tidy ✨'), h('div', { class: 'row' }, h('button', { class: 'primary', onclick: close }, 'Done')));
+        body.replaceChildren(h('div', { class: 'empty', 'data-testid': 'recall-clean-empty' }, t('cleanEmpty', 'Nothing to clean up. Your chat list looks tidy ✨')), h('div', { class: 'row' }, h('button', { class: 'primary', onclick: close }, t('done', 'Done'))));
         return;
       }
 
       const boxes = new Map();
       const count = h('strong', {}, '');
       const deleteBtn = h('button', { class: 'danger', 'data-testid': 'recall-delete' }, '');
-      const keepBtn = h('button', { 'data-testid': 'recall-keep' }, 'Keep selected');
+      const keepBtn = h('button', { 'data-testid': 'recall-keep' }, t('keepSelected', 'Keep selected'));
       const refresh = () => {
         const n = [...boxes.values()].filter((b) => b.checked).length;
-        count.textContent = `${n} of ${suggestions.length} selected`;
-        deleteBtn.textContent = n ? `Delete ${n} chat${n === 1 ? '' : 's'}…` : 'Delete…';
+        count.textContent = t('selectedCount', '{0} of {1} selected', [n, suggestions.length]);
+        deleteBtn.textContent = t('deleteBtn', 'Delete {0}…', n ? chats(n) : '').replace(/\s+…/, '…');
         deleteBtn.disabled = !n || !canDelete;
         keepBtn.disabled = !n;
       };
 
       const rows = suggestions.map((s) => {
-        const cb = h('input', { type: 'checkbox', 'aria-label': `Select ${s.title}`, 'data-id': s.id });
+        const cb = h('input', { type: 'checkbox', 'aria-label': s.title, 'data-id': s.id });
         cb.checked = s.preselected;
         cb.addEventListener('change', refresh);
         boxes.set(s.id, cb);
@@ -325,11 +351,11 @@
         const open = body.querySelector('.confirm');
         if (open) open.remove(); // never stack two confirmations
         const confirmBox = h('div', { class: 'confirm', role: 'alertdialog', 'data-testid': 'recall-confirm' },
-          h('div', {}, h('strong', {}, `Delete ${ids.length} chat${ids.length === 1 ? '' : 's'} from ChatGPT?`)),
-          h('p', { style: 'margin:6px 0 10px' }, 'They disappear from your history on every device. Recall can’t bring them back.'),
+          h('div', {}, h('strong', {}, t('confirmTitle', 'Delete {0} from ChatGPT?', chats(ids.length)))),
+          h('p', { style: 'margin:6px 0 10px' }, o.onUndo ? t('confirmBody', 'They disappear from your history on every device. You can undo for a few seconds right after.') : ''),
           h('div', { class: 'row' },
-            h('button', { onclick: () => confirmBox.remove(), 'data-testid': 'recall-confirm-cancel' }, 'Cancel'),
-            h('button', { class: 'danger', 'data-testid': 'recall-confirm-delete', onclick: () => run(ids, confirmBox) }, `Yes, delete ${ids.length}`)
+            h('button', { onclick: () => confirmBox.remove(), 'data-testid': 'recall-confirm-cancel' }, t('cancel', 'Cancel')),
+            h('button', { class: 'danger', 'data-testid': 'recall-confirm-delete', onclick: () => run(ids, confirmBox) }, t('yesDelete', 'Yes, delete {0}', ids.length))
           )
         );
         footer.before(confirmBox);
@@ -339,39 +365,63 @@
       const run = async (ids, confirmBox) => {
         confirmBox.remove();
         const bar = h('i');
-        const status = h('div', { class: 'status', 'data-testid': 'recall-progress' }, `Deleting 0 / ${ids.length}…`);
+        const status = h('div', { class: 'status', 'data-testid': 'recall-progress' }, t('deletingProgress', 'Deleting {0} / {1}…', [0, ids.length]));
         body.replaceChildren(h('div', { class: 'bar' }, bar), status);
         let res;
         try {
           res = await o.onDelete(ids, (done, total) => {
             bar.style.width = `${Math.round((done / total) * 100)}%`;
-            status.textContent = `Deleting ${done} / ${total}…`;
+            status.textContent = t('deletingProgress', 'Deleting {0} / {1}…', [done, total]);
           });
         } catch (err) {
           res = { deleted: [], failed: ids.map((id) => ({ id, error: err.message })) };
         }
         const titleOf = new Map(suggestions.map((x) => [x.id, x.title]));
-        const msg = [h('div', { class: res.deleted.length ? 'ok' : 'err', 'data-testid': 'recall-delete-result' }, `Deleted ${res.deleted.length} chat${res.deleted.length === 1 ? '' : 's'}.`)];
+        const msg = [h('div', { class: res.deleted.length ? 'ok' : 'err', 'data-testid': 'recall-delete-result' }, t('deletedResult', 'Deleted {0}.', chats(res.deleted.length)))];
         if (res.failed.length) {
           const reasons = [...new Set(res.failed.map((f) => f.error))];
           msg.push(h('div', { class: 'err', 'data-testid': 'recall-delete-errors' }, `${res.failed.length} couldn’t be deleted: ${reasons.join(' ')} You can open them and delete them by hand:`));
           msg.push(h('ul', { class: 'list' }, res.failed.map((f) => h('li', { style: 'display:block' }, h('a', { href: o.urlFor(f.id), target: '_blank', rel: 'noopener' }, titleOf.get(f.id) || f.id)))));
         }
         status.replaceChildren(...msg);
-        body.append(h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => { close(); if (res.deleted.length) o.onFinished && o.onFinished(res); } }, 'Done')));
+        const finish = () => { close(); if (res.deleted.length) o.onFinished && o.onFinished(res); };
+        const actions = h('div', { class: 'row' });
+        if (res.deleted.length && o.onUndo) {
+          // Undo: ChatGPT "deletes" by hiding a chat, so it can be un-hidden.
+          const undoBtn = h('button', { 'data-testid': 'recall-undo', onclick: async () => {
+            undoBtn.disabled = true;
+            let back;
+            try {
+              back = await o.onUndo(res.deleted);
+            } catch (err) {
+              back = { restored: [], failed: res.deleted.map((id) => ({ id, error: err.message })) };
+            }
+            const line = h('div', { class: back.restored.length ? 'ok' : 'err', 'data-testid': 'recall-undo-result' },
+              t('restoredResult', 'Restored {0}.', chats(back.restored.length)),
+              back.failed.length ? ' ' + [...new Set(back.failed.map((f) => f.error))].join(' ') : '');
+            status.append(line);
+            res = { ...res, deleted: res.deleted.filter((id) => !back.restored.includes(id)) };
+            undoBtn.remove();
+          } }, t('undo', 'Undo'));
+          actions.append(undoBtn);
+          // Undo only makes sense right after; hide it after a minute.
+          setTimeout(() => undoBtn.remove(), 60000);
+        }
+        actions.append(h('button', { class: 'primary', onclick: finish }, t('done', 'Done')));
+        body.append(actions);
       };
 
       const footer = h('div', { class: 'row split' },
         h('div', { class: 'row' },
-          h('button', { class: 'link small', onclick: () => setAll(true), 'data-testid': 'recall-select-all' }, 'Select all'),
-          h('button', { class: 'link small', onclick: () => setAll(false) }, 'Select none'),
+          h('button', { class: 'link small', onclick: () => setAll(true), 'data-testid': 'recall-select-all' }, t('selectAll', 'Select all')),
+          h('button', { class: 'link small', onclick: () => setAll(false) }, t('selectNone', 'Select none')),
           count
         ),
-        h('div', { class: 'row' }, h('button', { class: 'link', onclick: close }, 'Close'), keepBtn, deleteBtn)
+        h('div', { class: 'row' }, h('button', { class: 'link', onclick: close }, t('close', 'Close')), keepBtn, deleteBtn)
       );
 
       body.replaceChildren(
-        h('p', {}, `Recall found ${suggestions.length} chat${suggestions.length === 1 ? '' : 's'} you probably don’t need. Review, untick anything you want to keep, then delete in one go.`),
+        h('p', {}, t('cleanFound', 'Recall found {0} chats you probably don’t need. Review, untick anything you want to keep, then delete in one go.', suggestions.length)),
         note ? h('p', { class: 'err' }, note) : '',
         h('ul', { class: 'list' }, rows),
         footer
@@ -411,7 +461,7 @@
         handle.hidden = true;
         el.remove();
         onHide && onHide();
-      } }, 'Hide');
+      } }, t('hide', 'Hide'));
       const el = h('div', { class: 'toast', role: 'status', 'aria-live': 'polite', 'data-testid': testid },
         h('div', { class: 'brand', html: LOGO }, 'Recall'),
         text,
@@ -429,10 +479,26 @@
         if (handle.hidden) return;
         text.textContent = msg;
         fill.style.width = '100%';
-        hide.textContent = 'Close';
+        hide.textContent = t('close', 'Close');
         setTimeout(() => el.remove(), timeout);
       };
       return handle;
+    }
+
+    /** A small label that follows a page element for a few seconds. */
+    pin(target, label, ms = 4000) {
+      this.mount();
+      const el = h('div', { class: 'pin', role: 'status', 'data-testid': 'recall-pin' }, '↩ ', label);
+      this.layer.append(el);
+      const end = Date.now() + ms;
+      const tick = () => {
+        if (!target.isConnected || Date.now() > end) return el.remove();
+        const r = target.getBoundingClientRect();
+        el.style.top = `${Math.max(8, r.top - 30)}px`;
+        el.style.left = `${Math.max(8, r.right - el.offsetWidth)}px`;
+        requestAnimationFrame(tick);
+      };
+      tick();
     }
 
     // ------------------------------------------------------------- launcher
@@ -444,7 +510,7 @@
         return;
       }
       if (this.launcherEl) return;
-      this.launcherEl = h('button', { class: 'launcher', title: 'Recall: clean up chats', 'aria-label': 'Recall: clean up chats', 'data-testid': 'recall-launcher', onclick: onClick, html: LOGO });
+      this.launcherEl = h('button', { class: 'launcher', title: t('launcherTip', 'Recall: clean up chats'), 'aria-label': t('launcherTip', 'Recall: clean up chats'), 'data-testid': 'recall-launcher', onclick: onClick, html: LOGO });
       this.layer.append(this.launcherEl);
     }
   }

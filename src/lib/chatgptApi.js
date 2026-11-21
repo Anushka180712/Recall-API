@@ -147,10 +147,7 @@
     /** Hides the chat exactly like the web app's own "Delete" menu item does. */
     async function deleteConversation(id) {
       try {
-        await request(`/backend-api/conversation/${encodeURIComponent(id)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ is_visible: false }),
-        });
+        await setVisible(id, false);
       } catch (err) {
         if (err.status === 404) return true; // already gone: that's what we wanted
         throw err;
@@ -159,28 +156,55 @@
     }
 
     /**
-     * Deletes a few at a time and reports per-chat results; one failure never
-     * aborts the rest.
+     * Undo for a delete. ChatGPT's "delete" only hides a chat (is_visible:false),
+     * so setting it visible again brings it back, for as long as ChatGPT keeps
+     * hidden chats around. Recall only offers this right after a delete.
      */
-    async function deleteMany(ids, { onProgress } = {}) {
-      const results = { deleted: [], failed: [] };
-      let done = 0;
-      const outcomes = await mapPool(ids, Math.min(concurrency, 3), async (id) => {
-        let ok;
-        try {
-          await deleteConversation(id);
-          ok = true;
-        } catch (err) {
-          ok = err.message;
-        }
-        if (onProgress) onProgress(++done, ids.length);
-        return ok;
-      });
-      outcomes.forEach((ok, i) => (ok === true ? results.deleted.push(ids[i]) : results.failed.push({ id: ids[i], error: ok })));
-      return results;
+    async function restoreConversation(id) {
+      await setVisible(id, true);
+      return true;
     }
 
-    return { listConversations, getConversation, getConversations, deleteConversation, deleteMany, getAccessToken };
+    function setVisible(id, visible) {
+      return request(`/backend-api/conversation/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_visible: visible }),
+      });
+    }
+
+    /** Runs `fn` over ids a few at a time; one failure never aborts the rest. */
+    async function each(ids, fn, onProgress) {
+      const ok = [];
+      const failed = [];
+      let done = 0;
+      const outcomes = await mapPool(ids, Math.min(concurrency, 3), async (id) => {
+        let res;
+        try {
+          await fn(id);
+          res = true;
+        } catch (err) {
+          res = err.message;
+        }
+        if (onProgress) onProgress(++done, ids.length);
+        return res;
+      });
+      outcomes.forEach((res, i) => (res === true ? ok.push(ids[i]) : failed.push({ id: ids[i], error: res })));
+      return { ok, failed };
+    }
+
+    /** @returns {Promise<{deleted: string[], failed: {id: string, error: string}[]}>} */
+    async function deleteMany(ids, { onProgress } = {}) {
+      const { ok, failed } = await each(ids, deleteConversation, onProgress);
+      return { deleted: ok, failed };
+    }
+
+    /** @returns {Promise<{restored: string[], failed: {id: string, error: string}[]}>} */
+    async function restoreMany(ids, { onProgress } = {}) {
+      const { ok, failed } = await each(ids, restoreConversation, onProgress);
+      return { restored: ok, failed };
+    }
+
+    return { listConversations, getConversation, getConversations, deleteConversation, deleteMany, restoreConversation, restoreMany, getAccessToken };
   }
 
   /** Headers the ChatGPT web app itself sends; some endpoints reject requests without them. */

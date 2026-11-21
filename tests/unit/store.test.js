@@ -89,3 +89,22 @@ test('exportAll includes everything Recall stores', async () => {
 test('createStore without chrome.storage fails loudly', () => {
   assert.throws(() => createStore(), /chrome.storage is not available/);
 });
+
+test('pause for a while, then resume', async () => {
+  const { store } = fresh();
+  assert.equal(await store.getPausedUntil(), 0);
+  const until = await store.pause(3600000, 1000);
+  assert.equal(until, 3601000);
+  assert.equal(await store.getPausedUntil(2000), 3601000);
+  assert.equal(await store.getPausedUntil(3601001), 0, 'a pause ends by itself');
+  await store.resume();
+  assert.equal(await store.getPausedUntil(2000), 0);
+});
+
+test('health is recorded with a timestamp', async () => {
+  const { store } = fresh();
+  await store.setHealth({ composer: false });
+  const { health } = await store.getMeta();
+  assert.equal(health.composer, false);
+  assert.ok(health.at > 0);
+});

@@ -381,3 +381,93 @@ test('repeating a question inside the same chat is stopped and scrolls to the ea
   assert.equal((await page.locator('#prompt-textarea').innerText()).trim(), '', 'repeated draft cleared');
   assert.equal(server.sends.length, 0);
 });
+
+test('undo right after a bulk delete brings the chats back', async (t) => {
+  const env = await launch([
+    { id: 'untitled-1', title: 'New chat', prompts: ['hi'], updatedDaysAgo: 5 },
+    { id: 'greeting-2', title: 'Greeting', prompts: ['hello', 'thanks'], updatedDaysAgo: 3 },
+  ]);
+  t.after(env.close);
+  const { page, server } = env;
+  await freshChat(page);
+  await recall(page, 'recall-launcher').click();
+  await recall(page, 'recall-suggestion').first().waitFor();
+  await recall(page, 'recall-select-all').click();
+  await recall(page, 'recall-delete').click();
+  await recall(page, 'recall-confirm-delete').click();
+  await recall(page, 'recall-undo').waitFor({ timeout: 10000 });
+  assert.equal(server.deleted.length, 2);
+
+  await recall(page, 'recall-undo').click();
+  await recall(page, 'recall-undo-result').waitFor();
+  assert.match(await recall(page, 'recall-undo-result').innerText(), /Restored 2 chats/);
+  assert.deepEqual(server.restored.sort(), ['greeting-2', 'untitled-1']);
+  assert.ok(server.conversations.has('untitled-1'));
+});
+
+test('"Pause Recall for 1 hour" sends the message, stops checks, and can be resumed from the popup', async (t) => {
+  const env = await launch();
+  t.after(env.close);
+  const { page, server, context, extensionId } = env;
+  await askInNewChat(env, 'How do I reverse a linked list in Python?');
+
+  await freshChat(page);
+  await typePrompt(page, 'reverse a linked list in python');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  await recall(page, 'recall-pause').click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-message-author-role="assistant"]').length === 1);
+  assert.equal(server.sends.length, 2, 'the message was sent');
+  await recall(page, 'recall-paused').waitFor();
+
+  // While paused, a repeat goes straight through.
+  await freshChat(page);
+  await typePrompt(page, 'how to reverse a linked list in python');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelectorAll('[data-message-author-role="assistant"]').length === 1);
+  assert.equal(server.sends.length, 3);
+
+  const popup = await context.newPage();
+  await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+  await popup.locator('[data-testid="paused-banner"]').waitFor();
+  assert.match(await popup.locator('#paused-text').innerText(), /paused until/);
+  await popup.click('#resume');
+  await popup.locator('[data-testid="paused-banner"]').waitFor({ state: 'hidden' });
+
+  // Checks are back on.
+  await page.bringToFront();
+  await freshChat(page);
+  await typePrompt(page, 'reverse a linked list in python');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  assert.equal(server.sends.length, 3);
+});
+
+test('keyboard focus stays inside the dialog', async (t) => {
+  const env = await launch();
+  t.after(env.close);
+  const { page } = env;
+  await askInNewChat(env, 'Explain the difference between TCP and UDP');
+  await freshChat(page);
+  await typePrompt(page, 'what is the difference between udp and tcp');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  for (let i = 0; i < 12; i++) {
+    await page.keyboard.press(i % 3 ? 'Tab' : 'Shift+Tab');
+    const inside = await page.evaluate(() => document.activeElement && document.activeElement.tagName === 'RECALL-OVERLAY');
+    assert.ok(inside, `focus left the dialog after ${i + 1} Tab presses`);
+  }
+});
+
+test('full settings page opens with settings visible and saves the debug switch', async (t) => {
+  const env = await launch();
+  t.after(env.close);
+  const { context, extensionId, worker } = env;
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/src/popup/popup.html?options=1`);
+  assert.ok(await page.evaluate(() => document.body.classList.contains('page') && document.querySelector('#settings-box').open));
+  await page.check('[data-testid="debug"]');
+  await page.waitForTimeout(200);
+  const saved = await worker.evaluate(() => globalThis.chrome.storage.sync.get('recall.settings'));
+  assert.equal(saved['recall.settings'].debug, true);
+});

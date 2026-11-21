@@ -14,9 +14,10 @@
 
   const { policy, historyIndex, routes, cleanup, chatgptApi, store: storeMod } = globalThis.Recall;
   const dom = globalThis.RecallDom;
-  const DEBUG = false;
-  const log = (...a) => DEBUG && console.debug('[Recall]', ...a);
+  // Levelled logs (src/lib/log.js): warnings only, unless "Debug logging" is on.
+  const log = globalThis.Recall.log.create('content');
 
+  const t = (key, fallback, subs) => globalThis.Recall.i18n.t(key, fallback, subs);
   const UNTITLED_RE = /^(?:new chat|untitled|new conversation)$/i;
 
   // ------------------------------------------------------- lifecycle guard
@@ -67,9 +68,10 @@
         overlay.host.remove(); // a newer copy is running: disappear quietly
         return;
       }
+      log.info('extension context gone; asking for a reload');
       overlay.toast(
-        'Recall was updated or restarted. Reload this page to switch it back on. ChatGPT works normally in the meantime.',
-        [{ label: 'Later' }, { label: 'Reload page', primary: true, onClick: () => location.reload() }],
+        t('reloadMsg', 'Recall was updated or restarted. Reload this page to switch it back on. ChatGPT works normally in the meantime.'),
+        [{ label: t('later', 'Later') }, { label: t('reloadBtn', 'Reload page'), primary: true, onClick: () => location.reload() }],
         { testid: 'recall-reload' }
       );
     }, 1500);
@@ -91,19 +93,27 @@
     removed: [],
     importing: false,
     dirty: false,
+    pausedUntil: 0, // "Pause for 1 hour": no checks until this time
   };
 
   // ------------------------------------------------------------------ boot
   async function init() {
     try {
-      const [settings, index, snoozes] = await Promise.all([store.getSettings(), store.loadIndex(), store.getSnoozes()]);
+      const [settings, index, snoozes, pausedUntil] = await Promise.all([
+        store.getSettings(),
+        store.loadIndex(),
+        store.getSnoozes(),
+        store.getPausedUntil(),
+      ]);
       state.settings = settings;
       state.index = index;
       state.snoozes = snoozes;
+      state.pausedUntil = pausedUntil;
     } catch (err) {
-      console.warn('[Recall] could not load saved data, starting fresh', err);
+      log.warn('could not load saved data, starting fresh', { error: err.message });
       state.settings = globalThis.Recall.settings.sanitize({});
     }
+    globalThis.Recall.log.configure(state.settings);
     overlay.mount();
     overlay.setLauncher(state.settings.enabled && state.settings.showLauncher, openCleanup);
     observeConversation();
@@ -111,7 +121,20 @@
     cleanups.push(() => clearInterval(timer));
     setTimeout(firstRunAndNudges, 1500);
     jumpToTarget(); // arrived here via "Take me there" (full page load)
-    log('ready', state.index.stats());
+    setTimeout(checkHealth, 4000);
+    log.info('ready', state.index.stats());
+  }
+
+  /**
+   * ChatGPT changes its page from time to time. If Recall can't find the
+   * message box, it records that so the popup can say so plainly, instead of
+   * silently doing nothing. Recall never blocks sending when this happens.
+   */
+  function checkHealth() {
+    if (retired || !contextAlive()) return;
+    const composer = !!dom.composer();
+    if (!composer) log.warn('message box not found; ChatGPT may have changed its page', { selectors: dom.SELECTORS.composer });
+    store.setHealth({ composer, url: location.pathname.startsWith('/c/') ? '/c/…' : location.pathname }).catch(() => {});
   }
 
   // ------------------------------------------------------- send interception
@@ -120,6 +143,7 @@
     return {
       conversationId: routes.conversationId(location.href),
       temporaryChat: routes.isTemporaryChat(location.href),
+      paused: state.pausedUntil > Date.now(),
       hasAttachments: dom.hasAttachments(),
       visiblePrompts: routes.conversationId(location.href) ? dom.visibleUserPrompts() : [],
       isSnoozed: (norm, convId) => (s[`${globalThis.Recall.text.hash(norm)}:${convId}`] || 0) > Date.now(),
@@ -146,7 +170,11 @@
     }
 
     const decision = policy.evaluate(prompt, currentContext(), state.index, state.settings);
-    log('decision', decision.reason, decision.matches);
+    log.debug('decision', {
+      reason: decision.reason,
+      prompt: log.text(prompt),
+      matches: decision.matches.map((m) => ({ chat: m.conversationId, score: Math.round(m.score * 100) / 100, exact: !!m.exact })),
+    });
     // Shown in the popup as "Last check", so you can always see why Recall did
     // or didn't step in for the message you just sent.
     store.setLastDecision({
@@ -184,6 +212,15 @@
       onCancel: () => {
         const c = dom.composer();
         if (c) c.focus();
+      },
+      onPause: async () => {
+        state.pausedUntil = await store.pause(60 * 60 * 1000);
+        log.info('paused for 1 hour');
+        const until = new Date(state.pausedUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        overlay.toast(t('pausedUntil', 'Recall is paused until {0}.', until), [
+          { label: t('resume', 'Resume now'), onClick: () => store.resume() },
+        ], { timeout: 8000, testid: 'recall-paused' });
+        resend(); // send the message you were about to send
       },
     });
   }
@@ -343,6 +380,8 @@
     let lastCount = -1;
     let stableSince = Date.now();
     let loadAttempts = 0;
+    let noGrowth = 0;
+    let countAtLastLoad = 0;
     jumpTimer = setInterval(() => {
       const els = userMessageEls();
       const timedOut = Date.now() - started > 15000;
@@ -354,10 +393,15 @@
       if (!timedOut && (!els.length || Date.now() - stableSince < 700)) return; // still rendering
 
       const match = els.length && !target.title ? bestMessage(els, target.prompt) : null;
-      if (match && match.score < 0.6 && loadAttempts < 3 && !timedOut) {
-        // Not rendered yet: scroll the chat to the top so older turns load.
+      if (match && match.score < 0.6 && !timedOut && loadAttempts < 12 && noGrowth < 2) {
+        // Not rendered yet: scroll the chat to the top so older turns load,
+        // and keep going while new (older) messages keep appearing.
+        if (els.length <= countAtLastLoad) noGrowth++;
+        else noGrowth = 0;
+        countAtLastLoad = els.length;
         const box = scrollParent(els[0]);
         if (box) box.scrollTop = 0;
+        els[0].scrollIntoView({ block: 'start' });
         loadAttempts++;
         stableSince = Date.now();
         return;
@@ -413,6 +457,7 @@
     const go = () => !userScrolled && el.isConnected && el.scrollIntoView({ block: 'start', behavior: 'auto' });
     go();
     flash(el, 'recall-jump-target', 4000);
+    overlay.pin(el, t('jumpBadge', 'You asked this here'), 4000);
     // ChatGPT scrolls to the newest message after loading; put ours back.
     for (const ms of [250, 600, 1200, 2000, 3000]) setTimeout(() => !inView(el) && go(), ms);
     setTimeout(() => {
@@ -486,7 +531,7 @@
       await store.saveIndex(state.index, { removedConversations: removed });
     } catch (err) {
       state.dirty = true;
-      console.warn('[Recall] could not save index', err);
+      log.warn('could not save index', { error: err.message });
     }
   }
 
@@ -510,7 +555,8 @@
   async function importHistory({ limit = 200 } = {}) {
     if (state.importing) return { skipped: true };
     state.importing = true;
-    const ui = overlay.progress('Reading your chat list…', { testid: 'recall-import' });
+    log.info('import started');
+    const ui = overlay.progress(t('importReading', 'Reading your chat list…'), { testid: 'recall-import' });
     try {
       const convs = await listConversationsCached({ limit, fresh: true });
 
@@ -538,7 +584,7 @@
           onResult: (full) => {
             if (full.error) {
               failed++;
-              return log('skip', full.id, full.error);
+              return log.debug('import: skipped a chat', { chat: full.id, error: full.error });
             }
             const c = meta.get(full.id);
             for (const p of full.prompts) {
@@ -549,7 +595,7 @@
             const now = Date.now();
             if (now - lastPaint > 300 || done === total) {
               lastPaint = now;
-              ui.update(`Learning from your chats… ${done} of ${total} (you can keep chatting)`, 0.05 + 0.95 * (done / total));
+              ui.update(t('importProgress', 'Learning from your chats… {0} of {1} (you can keep chatting)', [done, total]), 0.05 + 0.95 * (done / total));
             }
             if (done % 25 === 0) scheduleSave();
           },
@@ -559,9 +605,11 @@
       await store.setMeta({ lastImportAt: Date.now() });
       const s = state.index.stats();
       const skipped = failed ? ` ${failed} chat${failed === 1 ? '' : 's'} couldn’t be read; open them once and Recall will learn them.` : '';
-      ui.done(`Done. Recall now knows ${s.prompts} prompts from ${s.conversations} chats (${added} new).${skipped}`, failed ? 10000 : 6000);
+      ui.done(t('importDone', 'Done. Recall now knows {0} prompts from {1} chats ({2} new).', [s.prompts, s.conversations, added]) + skipped, failed ? 10000 : 6000);
+      log.info('import done', { ...s, added, failed });
       return { added, ...s };
     } catch (err) {
+      log.warn('import failed', { error: err.message });
       ui.done(`Import didn’t work (${err.message}). Recall still learns from chats you send and open.`, 8000);
       return { error: err.message };
     } finally {
@@ -618,9 +666,22 @@
           await store.saveIndex(state.index, { removedConversations: state.removed.splice(0) });
           if (res.deleted.length) await store.bumpStat('deleted', res.deleted.length);
         } catch (err) {
-          log('could not save after delete', err.message);
+          log.warn('could not save after delete', { error: err.message });
         }
+        log.info('deleted chats', { deleted: res.deleted.length, failed: res.failed.length });
         return res;
+      },
+      onUndo: async (ids) => {
+        const back = await api.restoreMany(ids);
+        listCache.data = null;
+        try {
+          if (back.restored.length) await store.bumpStat('deleted', -back.restored.length);
+        } catch {
+          /* stats are cosmetic */
+        }
+        log.info('restored chats', { restored: back.restored.length, failed: back.failed.length });
+        // Restored chats are re-learned the next time you open them or import.
+        return back;
       },
       onFinished: (res) => {
         // ChatGPT's sidebar doesn't know about API deletions until it reloads.
@@ -639,10 +700,10 @@
     if (!meta.importOffered) {
       await store.setMeta({ importOffered: true, lastNudgeAt: now });
       overlay.toast(
-        'Recall can learn from your existing chats so it spots questions you’ve already asked. It takes a few seconds, runs in the background, and everything stays on this device.',
+        t('welcome', 'Recall can learn from your existing chats so it spots questions you’ve already asked. It takes a few seconds, runs in the background, and everything stays on this device.'),
         [
-          { label: 'Not now' },
-          { label: 'Learn from my chats', primary: true, onClick: () => importHistory() },
+          { label: t('notNow', 'Not now') },
+          { label: t('welcomeYes', 'Learn from my chats'), primary: true, onClick: () => importHistory() },
         ],
         { testid: 'recall-welcome' }
       );
@@ -657,16 +718,16 @@
       const { suggestions } = await loadCleanup();
       if (suggestions.length < s.nudgeMinSuggestions) return;
       overlay.toast(
-        `You have ${suggestions.length} chats that look stale (untitled, duplicates or untouched for months). Clear them out in a few clicks?`,
+        t('nudge', 'You have {0} chats that look stale (untitled, duplicates or untouched for months). Clear them out in a few clicks?', suggestions.length),
         [
-          { label: 'Don’t ask again', onClick: () => store.setMeta({ nudgeNever: true }) },
-          { label: 'Later' },
-          { label: 'Review', primary: true, onClick: openCleanup },
+          { label: t('dontAskAgain', 'Don’t ask again'), onClick: () => store.setMeta({ nudgeNever: true }) },
+          { label: t('later', 'Later') },
+          { label: t('review', 'Review'), primary: true, onClick: openCleanup },
         ],
         { testid: 'recall-nudge' }
       );
     } catch (err) {
-      log('nudge skipped', err.message);
+      log.debug('nudge skipped', { error: err.message });
     }
   }
 
@@ -689,10 +750,12 @@
     const k = storeMod.KEYS;
     if (changes[k.settings]) {
       state.settings = globalThis.Recall.settings.sanitize(changes[k.settings].newValue);
+      globalThis.Recall.log.configure(state.settings);
       overlay.setLauncher(state.settings.enabled && state.settings.showLauncher, openCleanup);
     }
     if (changes[k.index] && changes[k.index].newValue) state.index.merge(changes[k.index].newValue);
     if (changes[k.snoozes]) state.snoozes = changes[k.snoozes].newValue || {};
+    if (changes[k.meta]) state.pausedUntil = (changes[k.meta].newValue || {}).pausedUntil || 0;
   });
 
   init();

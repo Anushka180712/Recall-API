@@ -41,3 +41,17 @@ test('truncate adds an ellipsis only when needed', () => {
   assert.equal(text.truncate('short', 10), 'short');
   assert.equal(text.truncate('a very long sentence', 8), 'a very…');
 });
+
+test('tokenizes Chinese, Japanese and Korean into two-character pieces', () => {
+  const { tokenize } = require('../../src/lib/text.js');
+  assert.ok(tokenize('什么是闭包？').includes('闭包'));
+  assert.ok(tokenize('クロージャとは').includes('クロ'));
+  assert.ok(tokenize('자바스크립트 클로저').includes('클로'));
+});
+
+test('keeps Hindi words whole and drops common function words in other languages', () => {
+  const { tokenize } = require('../../src/lib/text.js');
+  assert.deepEqual(tokenize('क्लोजर क्या है'), ['क्लोजर']);
+  assert.deepEqual(tokenize('¿Qué es un closure en JavaScript?'), ['closure', 'javascript']);
+  assert.deepEqual(tokenize('Erkläre mir bitte Closures'), ['closure']);
+});

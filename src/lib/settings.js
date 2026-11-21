@@ -22,6 +22,7 @@
     nudgeMinSuggestions: 5,
     staleDays: 60,
     snoozeDays: 30, // how long "not helpful" silences a pair
+    debug: false, // verbose console logs (includes prompt text); off by default
   });
 
   const PRESETS = Object.freeze([

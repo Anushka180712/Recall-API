@@ -27,7 +27,18 @@
       'tell explain give show help want need know like just also very really some any ' +
       'something anything me let lets let\'s get got make sure ok okay so such ' +
       'not no yes as than too only own same other each few more most both all ' +
-      'way ways best using via quick quickly simple simply step steps'
+      'way ways best using via quick quickly simple simply step steps ' +
+      // Spanish, Portuguese, French, German, Hindi/Hinglish function words
+      // (accents are stripped before lookup, so "qué" is written "que").
+      'el la los las un una unos unas de del al y o que en por para con es como cual ' +
+      'por favor puedes podrias explica explicame dime me mi tu su se lo le ' +
+      'o os as um uma do da dos das no na nos nas e ou pra voce pode explique ' +
+      'le les une des du au aux et ou est sont comment quoi quel quelle pour avec sans ' +
+      'peux tu vous svp sil plait explique moi ce cet cette ' +
+      'der das ein eine einen dem den des und oder ist sind wie welche fur ohne ' +
+      'bitte kannst du mir erklar erklare ich ' +
+      'kya hai hain ka ki ke ko se me mein aur ya kaise kyu kyun batao bataiye samjhao ' +
+      'क्या है हैं का की के को से में और या कैसे क्यों बताओ बताइए समझाओ'
     ).split(/\s+/)
   );
 
@@ -55,10 +66,11 @@
     return input
       .normalize('NFKD')
       .replace(DIACRITICS_RE, '')
+      .normalize('NFC') // re-join Japanese/Korean/Devanagari marks split by NFKD
       .toLowerCase()
       .replace(URL_RE, ' url ')
       .replace(/['’]/g, '')
-      .replace(/[^\p{L}\p{N}+#]+/gu, ' ')
+      .replace(/[^\p{L}\p{M}\p{N}+#]+/gu, ' ')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -68,7 +80,7 @@
    * enough to merge "sorting/sorted/sorts" and "libraries/library".
    */
   function stem(word) {
-    if (word.length <= 3 || /\d/.test(word)) return word;
+    if (word.length <= 3 || /\d/.test(word) || !/^[a-z+#]+$/.test(word)) return word;
     if (word.endsWith('ies') && word.length > 4) return word.slice(0, -3) + 'y';
     if (word.endsWith('sses')) return word.slice(0, -2);
     if (word.endsWith('ing') && word.length > 5) return undouble(word.slice(0, -3));
@@ -87,6 +99,18 @@
     return word;
   }
 
+  // Chinese, Japanese and Korean are written without spaces, so a whole
+  // sentence would otherwise be one "word". Those runs become overlapping
+  // two-character tokens instead, the standard trick for CJK search.
+  const CJK_RE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー]+/gu;
+  const CJK_STOP = new Set('的了是吗呢么什怎请你我の는은이가을를에서です'.split(''));
+
+  function cjkBigrams(run, out) {
+    const chars = [...run].filter((c) => !CJK_STOP.has(c));
+    if (chars.length === 1) out.push(chars[0]);
+    for (let i = 0; i < chars.length - 1; i++) out.push(chars[i] + chars[i + 1]);
+  }
+
   /** Meaningful, stemmed tokens of a prompt. */
   function tokenize(input) {
     const norm = normalize(input);
@@ -94,6 +118,12 @@
     const out = [];
     for (const raw of norm.split(' ')) {
       if (!raw || STOPWORDS.has(raw)) continue;
+      if (CJK_RE.test(raw)) {
+        CJK_RE.lastIndex = 0;
+        for (const part of raw.split(CJK_RE)) if (part.length > 1 && !STOPWORDS.has(part)) out.push(stem(part));
+        for (const run of raw.match(CJK_RE)) cjkBigrams(run, out);
+        continue;
+      }
       if (raw.length < 2 && !/\d/.test(raw)) continue;
       const stemmed = stem(raw);
       out.push(CANONICAL.get(stemmed) || CANONICAL.get(raw) || stemmed);

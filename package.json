@@ -1,6 +1,6 @@
 {
   "name": "recall-chatgpt",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Browser extension that redirects you to the ChatGPT chat where you already asked the same question, and bulk-cleans stale chats.",
   "license": "MIT",
