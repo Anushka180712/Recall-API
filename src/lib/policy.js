@@ -93,12 +93,13 @@
   // Time-sensitive questions: an old answer is likely stale.
   const FRESH_RE = new RegExp(
     [
-      '\\b(?:latest|newest|most recent|recent|recently|current|currently|up[- ]to[- ]date|updated?|right now|nowadays|as of)\\b',
-      '\\b(?:today|tonight|tomorrow|yesterday|this (?:morning|week|weekend|month|year|season)|next (?:week|month|year)|last (?:night|week|month))\\b',
-      '\\b(?:news|headlines?|breaking|trending|live|score|scores|standings|weather|forecast)\\b',
-      '\\b(?:price|prices|stock|stocks|share price|exchange rate|crypto|bitcoin|interest rate)s?\\b',
-      '\\b(?:20[2-9]\\d)\\b',
-      '\\b(?:still|anymore|yet|so far|these days)\\b',
+      // Kept deliberately narrow: words like "current", "still" or "next month"
+      // appear in plenty of timeless questions and must not block a redirect.
+      '\\b(?:latest|newest|most recent|up[- ]to[- ]date|right now|as of (?:today|now))\\b',
+      '\\b(?:today|tonight|tomorrow|yesterday|this (?:morning|week|weekend))\\b',
+      '\\b(?:news|headlines?|breaking news|trending|live scores?|standings|weather|forecast)\\b',
+      '\\b(?:stock price|share price|exchange rate|bitcoin price|crypto prices?|price of|prices of|how much (?:is|does|do) .* cost)\\b',
+      '\\b(?:in|for|of|as of) 20[2-9]\\d\\b',
     ].join('|'),
     'i'
   );
@@ -107,7 +108,6 @@
   const CONTEXTUAL_RE = new RegExp(
     '^(?:' +
       [
-        'and\\b', 'also\\b', 'now\\b', 'then\\b', 'but\\b', 'so\\b',
         'what about\\b', 'how about\\b', 'what if\\b',
         'make (?:it|this|that|them)\\b', 'change (?:it|this|that)\\b', 'rewrite (?:it|this|that)\\b',
         'can you (?:make|change|rewrite|shorten|expand|fix|add|remove) (?:it|this|that|them)\\b',
@@ -118,7 +118,15 @@
     'i'
   );
 
+  const CONNECTIVE_RE = /^(?:and|also|now|then|but|so|or)\b/i;
+
   const CODE_FENCE_RE = /```|~~~/;
+
+  // Rules that judge the *content* of a prompt. An exact copy of something
+  // you already asked in another chat overrides them: you clearly asked this
+  // before. Rules about intent or context (asking for a new answer, small
+  // talk, attachments, temporary chats, Recall switched off) never yield.
+  const EXACT_OVERRIDES = new Set(['too-short', 'contextual-followup', 'needs-fresh-info', 'pasted-content']);
 
   /**
    * Pre-checks that don't need the index. Returns a reason string, or null when
@@ -143,6 +151,8 @@
     // A short deictic prompt ("what about in Java?", "make it shorter") is a
     // follow-up to the open conversation, not a standalone question.
     if (CONTEXTUAL_RE.test(norm) && tokenCount <= 12) return REASONS.CONTEXTUAL_FOLLOWUP;
+    // A *very* short prompt opening with a connective ("and in Java?", "so why?").
+    if (CONNECTIVE_RE.test(norm) && tokenCount <= 5) return REASONS.CONTEXTUAL_FOLLOWUP;
 
     const minChars = settings.minChars ?? 12;
     const minTokens = settings.minContentTokens ?? 3;
@@ -173,10 +183,15 @@
   function evaluate(prompt, ctx, index, settings = {}) {
     ctx = ctx || {};
     const pre = precheck(prompt, ctx, settings);
-    if (pre) return decision(pre);
+    let all;
+    if (pre) {
+      if (!EXACT_OVERRIDES.has(pre) || !index) return decision(pre);
+      all = index.search(prompt, { topK: 6, minScore: 1 }).filter((m) => m.exact);
+      if (!all.length) return decision(pre);
+    }
 
     const threshold = settings.threshold ?? 0.7;
-    const all = index ? index.search(prompt, { topK: 6, minScore: threshold }) : [];
+    all = all || (index ? index.search(prompt, { topK: 6, minScore: threshold }) : []);
     if (!all.length) return decision(REASONS.NO_MATCH);
 
     const norm = text.normalize(prompt);

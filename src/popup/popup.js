@@ -19,6 +19,18 @@
     $('#stat-deleted').textContent = stats.deleted.toLocaleString();
   }
 
+  async function renderLastCheck() {
+    const d = await store.getLastDecision();
+    if (!d) return;
+    const el = $('#last-check');
+    const mins = Math.round((Date.now() - d.at) / 60000);
+    const when = mins < 1 ? 'just now' : mins < 60 ? `${mins} min ago` : new Date(d.at).toLocaleString();
+    el.textContent = d.reason === 'match'
+      ? `“${d.prompt}” (${when}): Recall offered an earlier chat.`
+      : `“${d.prompt}” (${when}): sent normally. ${d.explanation}`;
+    el.className = d.reason === 'match' ? 'result yes' : 'result no';
+  }
+
   // ----------------------------------------------------------- settings
   function renderSettings() {
     for (const el of document.querySelectorAll('[data-setting]')) {
@@ -130,5 +142,6 @@
 
   renderSettings();
   renderStats();
+  renderLastCheck();
   runTester();
 })();

@@ -11,7 +11,7 @@ and clears out stale chats in a few clicks instead of one by one.
 
 [![CI](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml/badge.svg)](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4f46e5)
-![Tests](https://img.shields.io/badge/tests-136%20passing-059669)
+![Tests](https://img.shields.io/badge/tests-142%20passing-059669)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-059669)
 ![Privacy](https://img.shields.io/badge/data-stays%20on%20your%20device-7c3aed)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
@@ -106,13 +106,18 @@ flowchart TD
 | 4 | A **file or image is attached**, so the answer depends on it | | `has-attachments` |
 | 5 | You **explicitly ask for something new**. Your words always win, even over an exact duplicate | "generate a **new** poem", "**another** one", "**different** recipe", "explain it **again**", "**fresh** take", "**regenerate**", "**from scratch**", "**don't redirect**", "**ask anyway**" | `wants-new-answer` |
 | 6 | **Small talk or a chat command** | "hi", "thanks!", "continue", "go on", "tl;dr", "shorter" | `generic` |
-| 7 | A **follow-up** that only makes sense in the open chat | "what about in Java?", "make it shorter", "rewrite the code you gave" | `contextual-followup` |
+| 7 | A **follow-up** that only makes sense in the open chat | "what about in Java?", "make it shorter", "rewrite the code you gave", "and in Go?" | `contextual-followup` |
 | 8 | **Too short** to mean much (< 12 characters or < 3 meaningful words) | "python?" | `too-short` |
-| 9 | It needs **up-to-date information**, so an old answer could be stale | "**latest** iPhone price", "news **today**", "weather", "stock", "in **2026**" | `needs-fresh-info` |
+| 9 | It needs **up-to-date information**, so an old answer could be stale | "**latest** iPhone", "news **today**", "weather", "stock price", "best laptops **in 2026**". Everyday words like "current", "still" or "next month" do **not** count | `needs-fresh-info` |
 | 10 | It contains **pasted code or a long document** (unique input) | anything with ```` ``` ```` or > 1,500 chars | `pasted-content` |
 | 11 | Nothing earlier is **similar enough** | | `no-match` |
 | 12 | The only similar question is **in the chat you're already in** (that's a follow-up, not a repeat) | | `same-conversation` |
 | 13 | You said **"Not the same"** for that chat and this question (remembered for 30 days) | | `snoozed` |
+
+> **Exact copies always count.** If you paste the exact text of something you asked in another chat (ignoring case and
+> punctuation, however long it is), Recall offers that chat even if rules 7 to 10 would normally stay quiet. Only an
+> explicit request for a new answer, small talk, attachments, temporary chats, the current chat, or switching Recall off
+> beat an exact copy.
 
 > **Tip:** start or end a prompt with "again", "new", "fresh take", or "ask anyway" to skip Recall for that
 > one message, no clicks needed.
@@ -295,8 +300,8 @@ src/
   popup/                    popup UI
   background/               tiny service worker (install defaults)
 tests/
-  unit/                     128 Node tests for src/lib
-  e2e/                      8 real-browser tests (Chromium + the extension + a mock chat app)
+  unit/                     133 Node tests for src/lib
+  e2e/                      9 real-browser tests (Chromium + the extension + a mock chat app)
   fixtures/mock-chat.html   the mock chat app used by e2e tests and screenshots
 scripts/                    package, screenshots, icon generation
 ```
@@ -354,17 +359,17 @@ Load the folder as an unpacked extension (see [Install](#install)) and hit the â
 
 ## Testing
 
-**136 automated tests** run on every push via GitHub Actions.
+**142 automated tests** run on every push via GitHub Actions.
 
 | Suite | Count | What it covers |
 |---|---|---|
-| `tests/unit/policy.test.js` | 46 | Every redirect / no-redirect rule from the table above, rule priority ("new answer" beats an exact duplicate), snoozes, thresholds. |
+| `tests/unit/policy.test.js` | 50 | Every redirect / no-redirect rule from the table above, exact copies (including very long ones), rule priority ("new answer" beats an exact duplicate), snoozes, thresholds. |
 | `tests/unit/similarity.test.js` | 23 | Labelled paraphrases must match; same-template, different-topic pairs must not. |
-| `tests/unit/historyIndex.test.js` | 15 | Search ranking, IDF, caps, eviction, cross-tab merge, deletions, wipe. |
+| `tests/unit/historyIndex.test.js` | 16 | Search ranking, IDF, caps, eviction, cross-tab merge, deletions, wipe. |
 | `tests/unit/cleanup.test.js` | 10 | Each staleness signal, duplicates, protected/open chats, malformed input. |
 | `tests/unit/chatgptApi.test.js` | 12 | Parallel paging, concurrency limits, 429 back-off, prompt extraction, token refresh, partial delete failures. |
 | `tests/unit/store.test.js`, `settings`, `routes`, `text` | 22 | Persistence, validation, URL parsing, tokenisation. |
-| `tests/e2e/extension.test.js` | 8 | **Real Chromium with the extension loaded** against a mock chat app: redirect, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat follow-ups, *Not the same*, import, passive learning, bulk delete with confirmation, popup tester, on/off switch, and a **speed test**: importing 200 chats from a deliberately slow server must finish in under 15 s. |
+| `tests/e2e/extension.test.js` | 9 | **Real Chromium with the extension loaded** against a mock chat app: redirect, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat follow-ups, *Not the same*, import, passive learning, bulk delete with confirmation, popup tester and *Last message* explanation, on/off switch, an exact pasted copy of a long opening prompt, and a **speed test**: importing 200 chats from a deliberately slow server must finish in under 15 s. |
 
 The end-to-end tests serve a small mock chat app ([`tests/fixtures/mock-chat.html`](tests/fixtures/mock-chat.html))
 on `https://chatgpt.com` via Playwright request routing, so no real account or network is involved. To run them
@@ -378,6 +383,12 @@ CHROMIUM_PATH=/path/to/chrome npm run test:e2e
 ```
 
 ## Limitations and FAQ
+
+**Where does Recall show up, and how do I check it's working?** When it steps in, a dialog appears in the middle
+of the ChatGPT page *instead of* your message being sent. To see what happened with any message, click the Recall
+icon in the toolbar: **Last message you sent** says whether Recall checked it and, if it let it through, exactly
+why. You can also type any prompt into **Would Recall step in?** to test it without sending. If *Last message* never
+updates after you send something, reload the ChatGPT tab (needed once after installing or updating Recall).
 
 **ChatGPT changed its layout and Recall stopped working?** ChatGPT's markup changes often. All selectors are in
 [`src/content/dom.js`](src/content/dom.js) with several fallbacks each. If sending is never intercepted, that's

@@ -122,3 +122,14 @@ test('chat titles are searchable but not counted as prompts', () => {
   assert.deepEqual(idx.promptsFor('a', { includeTitles: true }), ['Docker volumes vs bind mounts']);
   assert.equal(idx.search('docker volumes vs bind mounts', { minScore: 0.7 })[0].source, 'title');
 });
+
+test('long prompts keep their identity through save/load (no duplicates, exact match still works)', () => {
+  const long = 'explain in depth '.repeat(60) + 'the end';
+  const a = new HistoryIndex();
+  a.add({ conversationId: 'x', prompt: long });
+  const b = HistoryIndex.fromJSON(JSON.parse(JSON.stringify(a.toJSON())));
+  b.merge(a.toJSON());
+  assert.equal(b.size, 1);
+  const [hit] = b.search(long, { minScore: 0.9 });
+  assert.equal(hit.exact, true);
+});

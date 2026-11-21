@@ -22,6 +22,7 @@
     stats: 'recall.stats',
     meta: 'recall.meta',
     protected: 'recall.protected',
+    last: 'recall.lastDecision',
   });
 
   const EMPTY_STATS = Object.freeze({ checks: 0, suggestions: 0, redirects: 0, overrides: 0, deleted: 0 });
@@ -114,6 +115,13 @@
         for (const id of ids) set.add(id);
         await local.set({ [KEYS.protected]: [...set] });
         return set;
+      },
+
+      async setLastDecision(d) {
+        await local.set({ [KEYS.last]: d });
+      },
+      async getLastDecision() {
+        return getOne(local, KEYS.last, null);
       },
 
       /** Everything Recall stores, for the "Export my data" button. */

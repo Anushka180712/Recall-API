@@ -66,7 +66,7 @@ const NOT = [
   // Time-sensitive: an old answer would be stale.
   ['what is the latest price of the iphone 15 pro', REASONS.NEEDS_FRESH_INFO],
   ['what is the price of the iphone 15 pro today', REASONS.NEEDS_FRESH_INFO],
-  ['current difference between TCP and UDP adoption', REASONS.NEEDS_FRESH_INFO],
+  ['latest difference between TCP and UDP adoption', REASONS.NEEDS_FRESH_INFO],
   ['best laptops to buy in 2026', REASONS.NEEDS_FRESH_INFO],
   // Follow-ups that only make sense in the open conversation.
   ['what about reversing it in java instead', REASONS.CONTEXTUAL_FOLLOWUP],
@@ -153,4 +153,52 @@ test('every reason has a human explanation', () => {
 
 test('precheck returns null for a normal standalone question', () => {
   assert.equal(precheck('How do I reverse a linked list in Python?', {}, S), null);
+});
+
+// ------------------------------------------------------- exact copies
+const LONG_PROMPT =
+  'I am preparing for a software engineering interview at a fintech company next month. Can you help me build a study plan ' +
+  'that covers data structures, algorithms, system design basics and behavioural questions, with a daily schedule for four ' +
+  'weeks, recommended practice problems for each topic, and tips on how to explain my thinking out loud during the coding ' +
+  'round? I have about two hours every weekday and five hours on weekends.';
+
+function indexWith(prompt, conversationId = 'old-chat') {
+  const i = new HistoryIndex();
+  i.add({ conversationId, prompt, title: 'Earlier chat', createdAt: Date.now() - 86400000 });
+  return i;
+}
+
+test('REDIRECTS: an exact copy of a long opening prompt (longer than what is stored)', () => {
+  const d = evaluate(LONG_PROMPT, {}, indexWith(LONG_PROMPT), S);
+  assert.equal(d.reason, REASONS.MATCH);
+  assert.equal(d.matches[0].exact, true);
+  assert.equal(d.matches[0].score, 1);
+});
+
+test('REDIRECTS: exact copies win over content rules (follow-up words, time words, pasted code, very short)', () => {
+  for (const p of [
+    'So how do I set up a Python virtual environment on Windows',
+    'what is the latest stable version of node and how do I install it',
+    'make it work with python 3: ```print "hi"```',
+    'docker compose',
+  ]) {
+    const d = evaluate(p, {}, indexWith(p), S);
+    assert.equal(d.reason, REASONS.MATCH, p);
+  }
+});
+
+test('REDIRECTS: everyday words like "current", "still", "next month" no longer block a match', () => {
+  for (const [old, now] of [
+    ['Is it worth learning Java for backend development', 'Is it still worth learning Java for backend development?'],
+    ['best way to deploy a react app', 'what is the current best way to deploy a react app'],
+  ]) {
+    assert.equal(evaluate(now, {}, indexWith(old), S).reason, REASONS.MATCH, now);
+  }
+});
+
+test('does NOT redirect an exact copy when you ask for a new answer, or in the same chat', () => {
+  const p = 'write a poem about the ocean at night';
+  assert.equal(evaluate(`${p} again`, {}, indexWith(`${p} again`), S).reason, REASONS.WANTS_NEW_ANSWER);
+  assert.equal(evaluate(p, { conversationId: 'old-chat' }, indexWith(p), S).reason, REASONS.SAME_CONVERSATION);
+  assert.equal(evaluate('hello there', {}, indexWith('hello there'), S).reason, REASONS.GENERIC);
 });

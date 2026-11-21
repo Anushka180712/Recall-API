@@ -242,3 +242,31 @@ test('import is fast: 200 chats with a slow server finish in seconds, in paralle
   assert.ok(server.peakInFlight <= 7, `stays polite (peak ${server.peakInFlight} requests)`);
   assert.match(await recall(page, 'recall-import').innerText(), /from 200 chats/);
 });
+
+test('exact copy of an earlier chat’s opening prompt is redirected, and the popup explains the last check', async (t) => {
+  const opening =
+    'So I am preparing for a software engineering interview at a fintech company next month. Can you help me build a study plan ' +
+    'that covers data structures, algorithms, system design basics and behavioural questions, with a daily schedule for four ' +
+    'weeks, recommended practice problems for each topic, and tips on explaining my thinking out loud? I have about two hours ' +
+    'every weekday and five hours on weekends, and I still struggle with dynamic programming.';
+  const env = await launch([{ id: 'interview-plan', title: 'Interview study plan', prompts: [opening, 'add mock interviews'], updatedDaysAgo: 15 }]);
+  t.after(env.close);
+  const { page, server, context, extensionId } = env;
+
+  await page.goto(`${ORIGIN}/`);
+  await waitForRecall(page);
+  await recall(page, 'recall-welcome').locator('button', { hasText: 'Learn from my chats' }).click();
+  await recall(page, 'recall-import').filter({ hasText: 'Done' }).waitFor({ timeout: 15000 });
+
+  // Paste the exact same text into a new chat and press Enter.
+  await page.locator('#prompt-textarea').click();
+  await page.keyboard.insertText(opening);
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  assert.equal(server.sends.length, 0);
+  assert.match(await recall(page, 'recall-match').first().innerText(), /Interview study plan[\s\S]*100% match/);
+
+  const popup = await context.newPage();
+  await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+  await popup.locator('[data-testid="last-check"]', { hasText: 'Recall offered an earlier chat' }).waitFor();
+});

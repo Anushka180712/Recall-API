@@ -60,7 +60,7 @@ const SEED = [
 
     // 3. The popup, with the live tester filled in.
     const popup = await context.newPage();
-    await popup.setViewportSize({ width: 360, height: 480 });
+    await popup.setViewportSize({ width: 360, height: 560 });
     await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
     await popup.fill('#test-input', 'difference between udp and tcp?');
     await popup.waitForTimeout(300);

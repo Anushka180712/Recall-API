@@ -87,6 +87,15 @@
 
     const decision = policy.evaluate(prompt, currentContext(), state.index, state.settings);
     log('decision', decision.reason, decision.matches);
+    // Shown in the popup as "Last check", so you can always see why Recall did
+    // or didn't step in for the message you just sent.
+    store.setLastDecision({
+      at: Date.now(),
+      reason: decision.reason,
+      explanation: decision.explanation,
+      prompt: globalThis.Recall.text.truncate(prompt, 80),
+      known: state.index.stats().prompts,
+    }).catch(() => {});
 
     if (!decision.intercept) {
       remember(prompt);
@@ -283,13 +292,17 @@
 
       // Phase 2: prompts, in parallel, indexed as each chat arrives.
       let added = 0;
+      let failed = 0;
       let lastPaint = 0;
       const meta = new Map(todo.map((c) => [c.id, c]));
       if (todo.length) {
         ui.update(`Recall can already spot repeats. Reading ${todo.length} chats for more detail… (you can keep chatting)`, 0.05);
         await api.getConversations(todo.map((c) => c.id), {
           onResult: (full) => {
-            if (full.error) return log('skip', full.id, full.error);
+            if (full.error) {
+              failed++;
+              return log('skip', full.id, full.error);
+            }
             const c = meta.get(full.id);
             for (const p of full.prompts) {
               if (state.index.add({ conversationId: c.id, prompt: p, createdAt: c.createdAt, title: c.title, source: 'imported' })) added++;
@@ -308,7 +321,8 @@
       await store.saveIndex(state.index);
       await store.setMeta({ lastImportAt: Date.now() });
       const s = state.index.stats();
-      ui.done(`Done. Recall now knows ${s.prompts} prompts from ${s.conversations} chats (${added} new).`);
+      const skipped = failed ? ` ${failed} chat${failed === 1 ? '' : 's'} couldn’t be read; open them once and Recall will learn them.` : '';
+      ui.done(`Done. Recall now knows ${s.prompts} prompts from ${s.conversations} chats (${added} new).${skipped}`, failed ? 10000 : 6000);
       return { added, ...s };
     } catch (err) {
       ui.done(`Import didn’t work (${err.message}). Recall still learns from chats you send and open.`, 8000);
