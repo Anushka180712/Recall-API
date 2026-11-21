@@ -146,11 +146,15 @@
     }
 
     mount() {
+      if (this.dead) return this; // this copy of Recall stepped aside
       if (!this.host.isConnected) (document.body || document.documentElement).append(this.host);
       return this;
     }
 
     get isOpen() {
+      // If the page threw our dialog out of the DOM (e.g. a full re-render),
+      // it isn't open any more; never let a ghost dialog block future checks.
+      if (this.modal && !this.modal.isConnected) this.closeModal();
       return !!this.modal;
     }
 

@@ -535,6 +535,12 @@ test('"Take me there" from inside another chat lands on the right message (old c
     return r.top >= 56 && r.bottom <= window.innerHeight;
   }), 'the message is fully in view below the header');
   assert.equal(server.sends.length, 0);
+
+  // The old chat's messages, still on screen during the switch, were not learned as the new chat's.
+  await page.waitForTimeout(1500);
+  const { 'recall.index': idx } = await env.worker.evaluate(() => globalThis.chrome.storage.local.get('recall.index'));
+  const wrong = idx.e.filter(([conv, prompt]) => conv === 'there-chat' && /water basil|soil for tomatoes|fertilizer/.test(prompt));
+  assert.deepEqual(wrong, [], 'no prompts attributed to the wrong chat');
 });
 
 test('"Take me there" lands on the prompt even when only the chat TITLE matched (after importing history)', async (t) => {
@@ -556,4 +562,100 @@ test('"Take me there" lands on the prompt even when only the chat TITLE matched 
   const target = page.locator('[data-recall-highlight="recall-jump-target"]');
   await target.waitFor({ timeout: 15000 });
   assert.equal((await target.innerText()).trim(), 'python: flip the order of nodes in a singly linked list');
+});
+
+test('repeat checks keep working, again and again, without reloading the page', async (t) => {
+  const env = await launch([
+    { id: 'chat-sql', title: 'SQL joins', prompts: ['Explain the difference between inner join and left join in SQL'], updatedDaysAgo: 6 },
+  ]);
+  t.after(env.close);
+  const { page, server } = env;
+  await askInNewChat(env, 'How do I reverse a linked list in Python?');
+  const pythonChat = page.url();
+  const dialogs = () => page.locator('recall-overlay [data-testid="recall-dialog"]').count();
+  const assistantCount = () => page.locator('[data-message-author-role="assistant"]').count();
+
+  // 1. Stopped, dismissed with Esc, then Enter again: stopped again.
+  await freshChat(page);
+  await typePrompt(page, 'reverse a linked list in python');
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press('Enter');
+    await recall(page, 'recall-dialog').waitFor();
+    assert.equal(await dialogs(), 1, 'exactly one dialog');
+    await page.keyboard.press('Escape');
+    await recall(page, 'recall-dialog').waitFor({ state: 'detached' });
+  }
+  // ...and with the send button.
+  await page.locator('[data-testid="send-button"]').click();
+  await recall(page, 'recall-dialog').waitFor();
+  assert.equal(server.sends.length, 1, 'nothing extra was sent');
+
+  // 2. "Ask anyway" lets exactly one send through.
+  await recall(page, 'recall-ask-anyway').click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-message-author-role="assistant"]').length === 1);
+  assert.equal(server.sends.length, 2);
+  await page.waitForTimeout(400);
+  await typePrompt(page, 'how to reverse a linked list in python?');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  assert.equal(server.sends.length, 2, 'the next repeat is stopped again');
+  assert.equal(await assistantCount(), 1);
+
+  // 3. Switch chats in-app (no reload), Take me there, then repeat it inside that chat: stopped (same-chat).
+  await recall(page, 'recall-cancel').click();
+  await page.locator('nav a[href="/c/chat-sql"]').click();
+  await page.waitForURL(/\/c\/chat-sql/);
+  await page.waitForTimeout(2500); // opened chats are learned
+  await typePrompt(page, 'reverse a linked list in python');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  const other = recall(page, 'recall-match').filter({ hasText: /How do I reverse/ }).first();
+  await other.getByRole('button', { name: /Open chat/ }).click();
+  await page.waitForURL(pythonChat);
+  await page.waitForTimeout(2500);
+  await typePrompt(page, 'How do I reverse a linked list in Python?');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  assert.match(await recall(page, 'recall-dialog').innerText(), /in this chat/);
+  await page.keyboard.press('Escape');
+
+  // 4. Still in the same page: a repeat of a different chat is stopped too.
+  await typePrompt(page, 'difference between left join and inner join in sql');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  assert.match(await recall(page, 'recall-match').first().innerText(), /SQL joins/);
+  assert.equal(server.sends.length, 2, 'no repeat was ever generated');
+});
+
+test('when Recall is injected again (update), the newest copy takes over: one dialog, one send', async (t) => {
+  const env = await launch();
+  t.after(env.close);
+  const { page, server, worker } = env;
+  await askInNewChat(env, 'Explain the difference between TCP and UDP');
+  await freshChat(page);
+
+  // What the service worker does after an update: inject the scripts again, twice for good measure.
+  for (let i = 0; i < 2; i++) {
+    await worker.evaluate(async () => {
+      const [tab] = await globalThis.chrome.tabs.query({ url: 'https://chatgpt.com/*' });
+      const files = globalThis.chrome.runtime.getManifest().content_scripts[0].js;
+      await globalThis.chrome.scripting.executeScript({ target: { tabId: tab.id }, files });
+    });
+  }
+  await page.waitForTimeout(800);
+  assert.equal(await page.locator('recall-overlay').count(), 1, 'old copies removed their UI');
+
+  await typePrompt(page, 'what is the difference between udp and tcp');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  assert.equal(await page.locator('recall-overlay [data-testid="recall-dialog"]').count(), 1);
+  await recall(page, 'recall-ask-anyway').click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-message-author-role="assistant"]').length === 1);
+  await page.waitForTimeout(500);
+  assert.equal(server.sends.length, 2, 'sent exactly once');
+
+  await typePrompt(page, 'udp vs tcp difference');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  assert.equal(server.sends.length, 2);
 });

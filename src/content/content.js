@@ -9,8 +9,10 @@
  */
 (function () {
   'use strict';
-  if (globalThis.__recallLoaded) return;
-  globalThis.__recallLoaded = true;
+  // No "already loaded" early exit on purpose: when Recall is updated, the
+  // fresh copy injected into this tab can share globals with the old one, and
+  // an early exit would leave the tab with no working copy until a reload.
+  // Instead the newest copy always starts and older copies step aside.
 
   const { policy, historyIndex, routes, cleanup, chatgptApi, store: storeMod } = globalThis.Recall;
   const dom = globalThis.RecallDom;
@@ -28,8 +30,18 @@
   // injected copy or ask for a page reload.
   const INSTANCE = Math.random().toString(36).slice(2);
   document.documentElement.dataset.recallInstance = INSTANCE;
+  globalThis.__recallInstance = INSTANCE;
   const cleanups = [];
   let retired = false;
+
+  // Tell an older copy sharing this script world to step aside right away.
+  const previousRetire = globalThis.__recallRetire;
+  globalThis.__recallRetire = () => retire({ quiet: true });
+
+  /** A newer copy of Recall started in this tab (after an update or re-injection). */
+  function superseded() {
+    return globalThis.__recallInstance !== INSTANCE && globalThis.__recallInstance !== undefined;
+  }
 
   function contextAlive() {
     try {
@@ -43,16 +55,23 @@
   function on(type, fn, capture) {
     const wrapped = (e) => {
       if (retired) return;
+      if (superseded()) return retire({ quiet: true });
       if (!contextAlive()) return retire();
-      fn(e);
+      try {
+        fn(e);
+      } catch (err) {
+        // Fail open: a bug in Recall must never stop you from sending.
+        log.error(`${type} handler failed`, { error: err && err.message });
+      }
     };
     window.addEventListener(type, wrapped, capture);
     cleanups.push(() => window.removeEventListener(type, wrapped, capture));
   }
 
-  function retire() {
+  function retire({ quiet = false } = {}) {
     if (retired) return;
     retired = true;
+    log.info(quiet ? 'a newer copy took over' : 'stepping aside', { instance: INSTANCE });
     for (const fn of cleanups.splice(0)) {
       try {
         fn();
@@ -62,9 +81,13 @@
     }
     overlay.closeModal();
     overlay.setLauncher(false);
+    if (quiet) {
+      overlay.dead = true;
+      return overlay.host.remove();
+    }
     // Give a freshly injected copy a moment to take over before asking for a reload.
     setTimeout(() => {
-      if (document.documentElement.dataset.recallInstance !== INSTANCE) {
+      if (document.documentElement.dataset.recallInstance !== INSTANCE || superseded()) {
         overlay.host.remove(); // a newer copy is running: disappear quietly
         return;
       }
@@ -77,6 +100,14 @@
     }, 1500);
   }
 
+  if (typeof previousRetire === 'function') {
+    try {
+      previousRetire();
+    } catch {
+      /* the old copy is gone already */
+    }
+  }
+
   const store = storeMod.createStore();
   const api = chatgptApi.createClient({ origin: location.origin });
   const overlay = new globalThis.RecallOverlay();
@@ -86,7 +117,7 @@
     index: new historyIndex.HistoryIndex(),
     snoozes: {},
     bypassUntil: 0, // set by "Ask anyway": the next send goes straight through
-    lastHandled: { text: '', at: 0 },
+    lastHandled: { text: '', at: 0, type: '' },
     pending: null, // prompt sent from the "new chat" page, waiting for its conversation id
     href: location.href,
     saveTimer: 0,
@@ -113,11 +144,16 @@
       log.warn('could not load saved data, starting fresh', { error: err.message });
       state.settings = globalThis.Recall.settings.sanitize({});
     }
+    if (retired) return; // a newer copy took over while we were loading
     globalThis.Recall.log.configure(state.settings);
     overlay.mount();
     overlay.setLauncher(state.settings.enabled && state.settings.showLauncher, openCleanup);
     observeConversation();
-    const timer = setInterval(() => (contextAlive() ? checkUrl() : retire()), 400);
+    const timer = setInterval(() => {
+      if (superseded()) retire({ quiet: true });
+      else if (!contextAlive()) retire();
+      else checkUrl();
+    }, 400);
     cleanups.push(() => clearInterval(timer));
     setTimeout(firstRunAndNudges, 1500);
     jumpToTarget(); // arrived here via "Take me there" (full page load)
@@ -145,7 +181,7 @@
       temporaryChat: routes.isTemporaryChat(location.href),
       paused: state.pausedUntil > Date.now(),
       hasAttachments: dom.hasAttachments(),
-      visiblePrompts: routes.conversationId(location.href) ? dom.visibleUserPrompts() : [],
+      visiblePrompts: routes.conversationId(location.href) ? currentChatPrompts() : [],
       isSnoozed: (norm, convId) => (s[`${globalThis.Recall.text.hash(norm)}:${convId}`] || 0) > Date.now(),
     };
   }
@@ -155,22 +191,29 @@
    * we return, ChatGPT's own handler runs and the message is gone.
    */
   function handleSend(event) {
-    if (!state.settings || overlay.isOpen) return;
+    if (!state.settings) return log.warn('send not checked: settings not loaded yet');
+    if (overlay.isOpen) return;
     const prompt = dom.composerText().trim();
     if (!prompt) return;
 
     const now = Date.now();
-    // One physical send can surface as keydown + click + submit; handle it once.
-    if (state.lastHandled.text === prompt && now - state.lastHandled.at < 1500) return;
+    // One physical send can surface as keydown + click + submit within a few
+    // milliseconds; handle it once. Kept short and limited to *different*
+    // event types, so sending the same text again a moment later is checked.
+    const last = state.lastHandled;
+    if (last.text === prompt && last.type !== event.type && now - last.at < 800) return;
 
     if (state.bypassUntil > now) {
-      state.bypassUntil = 0;
+      state.bypassUntil = 0; // "Ask anyway" covers exactly one send
+      log.debug('send let through once (Ask anyway)', { via: event.type });
       remember(prompt);
       return;
     }
+    state.bypassUntil = 0;
 
     const decision = policy.evaluate(prompt, currentContext(), state.index, state.settings);
     log.debug('decision', {
+      via: event.type,
       reason: decision.reason,
       prompt: log.text(prompt),
       matches: decision.matches.map((m) => ({ chat: m.conversationId, score: Math.round(m.score * 100) / 100, exact: !!m.exact })),
@@ -226,7 +269,7 @@
   }
 
   function resend({ bypass = true } = {}) {
-    state.lastHandled = { text: '', at: 0 };
+    state.lastHandled = { text: '', at: 0, type: '' };
     if (bypass) state.bypassUntil = Date.now() + 3000;
     const btn = dom.sendButton();
     if (btn && !btn.disabled) {
@@ -274,7 +317,7 @@
   function markHandled(e) {
     if (e.defaultPrevented && overlay.isOpen) return; // intercepted: not sent yet
     const prompt = dom.composerText().trim();
-    if (prompt) state.lastHandled = { text: prompt, at: Date.now() };
+    if (prompt) state.lastHandled = { text: prompt, at: Date.now(), type: e.type };
   }
 
   // --------------------------------------------------------------- learning
@@ -294,10 +337,30 @@
     else if (title) state.index.touchConversation(conversationId, title, createdAt || 0);
   }
 
+  /**
+   * Messages of the chat we just left. ChatGPT keeps them on screen for a
+   * moment after the URL changes; they must not be learned (or matched) as
+   * belonging to the new chat.
+   */
+  let leftoverMessages = new WeakSet();
+
+  /** User messages on screen that really belong to the open chat. */
+  function currentChatPrompts() {
+    return userMessageEls()
+      .filter((el) => !leftoverMessages.has(el))
+      .map((el) => (el.innerText || el.textContent || '').trim())
+      .filter(Boolean);
+  }
+
   function checkUrl() {
     if (location.href === state.href) return;
+    const from = routes.conversationId(state.href);
     state.href = location.href;
     const id = routes.conversationId(location.href);
+    // Switching between two existing chats: what's on screen is the old one.
+    // (From the new-chat page to its new id, the messages are the new chat's.)
+    leftoverMessages = from && from !== id ? new WeakSet(userMessageEls()) : new WeakSet();
+    log.debug('chat changed', { from, to: id });
     if (state.pending && id && Date.now() - state.pending.at < 60000 && !routes.isTemporaryChat(location.href)) {
       addPrompt(id, state.pending.prompt, state.pending.at, 'sent');
       state.pending = null;
@@ -577,7 +640,7 @@
     const id = routes.conversationId(location.href);
     if (!id) return;
     let added = 0;
-    for (const p of dom.visibleUserPrompts()) {
+    for (const p of currentChatPrompts()) {
       if (state.index.add({ conversationId: id, prompt: p, createdAt: 0, source: 'opened', title: dom.titleFor(id, routes.conversationId) })) added++;
     }
     if (added) scheduleSave();
@@ -809,7 +872,7 @@
 
   // ------------------------------------------------------- popup & sync
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-    if (!msg || typeof msg.type !== 'string') return false;
+    if (retired || superseded() || !msg || typeof msg.type !== 'string') return false;
     if (msg.type === 'recall:cleanup') {
       openCleanup();
       reply({ ok: true });
@@ -823,6 +886,7 @@
   });
 
   chrome.storage.onChanged.addListener((changes) => {
+    if (retired) return;
     const k = storeMod.KEYS;
     if (changes[k.settings]) {
       state.settings = globalThis.Recall.settings.sanitize(changes[k.settings].newValue);

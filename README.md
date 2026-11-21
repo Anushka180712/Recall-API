@@ -11,7 +11,7 @@ and clears out stale chats in a few clicks instead of one by one.
 
 [![CI](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml/badge.svg)](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4f46e5)
-![Tests](https://img.shields.io/badge/tests-184%20passing-059669)
+![Tests](https://img.shields.io/badge/tests-186%20passing-059669)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-059669)
 ![Languages](https://img.shields.io/badge/UI-6%20languages-0ea5e9)
 ![Privacy](https://img.shields.io/badge/data-stays%20on%20your%20device-7c3aed)
@@ -452,6 +452,13 @@ The matching logic is pure and unit-tested in [`src/lib/jump.js`](src/lib/jump.j
 
 ### Staying alive when things change
 
+- **Every send is checked, every time.** The listeners sit on `window` in the capture phase and look up the message
+  box and send button at the moment you press them, so ChatGPT re-drawing its page or switching chats can't detach
+  them. *Ask anyway* covers exactly one send. A bug inside a check is caught and the message goes through (fail open).
+- **Newest copy wins.** If Recall is injected into a tab again (after an update), the new copy starts and tells the
+  old one to step aside; there is never a tab with no working copy, and never two dialogs.
+- **Switching chats:** the previous chat's messages stay on screen for a moment after the URL changes. Recall ignores
+  them, so they're never learned as, or matched against, the new chat.
 - **Extension updated or reloaded** while ChatGPT is open: the old copy notices ("Extension context invalidated"),
   removes its listeners and steps aside. The service worker injects the new copy into open tabs; if that isn't
   possible, a toast offers **Reload page**. ChatGPT keeps working either way.
@@ -489,7 +496,7 @@ src/
   background/service-worker.js  defaults on install, re-inject after update, shortcut, OFF badge
 tests/
   unit/                       164 Node tests for src/lib, translations and the manifest
-  e2e/                        20 real-browser tests (Chromium + the extension + a mock chat app)
+  e2e/                        22 real-browser tests (Chromium + the extension + a mock chat app)
   fixtures/mock-chat.html     mock chat app used by the e2e tests and screenshots
 scripts/
   package.js                  builds the Chrome and Firefox zips
@@ -602,7 +609,7 @@ after each change. Turn on *Debug logging* to watch decisions in the console.
 
 ## Testing
 
-**184 automated tests** run on every push via GitHub Actions.
+**186 automated tests** run on every push via GitHub Actions.
 
 | Suite | Tests | What it covers |
 |---|---|---|
@@ -615,7 +622,7 @@ after each change. Turn on *Debug logging* to watch decisions in the console.
 | `text` | 9 | Normalising and tokenising, including CJK, Hindi and other languages' filler words. |
 | `i18n`, `log`, `manifest`, `settings`, `routes` | 19 | Every locale has every key and placeholder within store limits; log levels and prompt redaction; every manifest file exists, libraries load in the right order, every `t('key')` used in code is translated; the Firefox manifest. |
 | `jump` | 6 | Message id beats text, exact text, re-phrased matches, title-only matches, truncated long messages, no wrong guesses. |
-| **e2e** (real Chromium) | 20 | Redirect, **several similar chats listed and any one opens at its own prompt**, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message (and below the sticky header) in a chat that renders late, jumps to the bottom and keeps the previous chat on screen during navigation, including matches that came only from the chat's title, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
+| **e2e** (real Chromium) | 22 | **Repeat after repeat in one page without reloading** (Esc, send button, *Ask anyway* covering exactly one send, switching chats, *Take me there*, then repeats there), **a re-injected copy taking over cleanly** (one dialog, one send), redirect, **several similar chats listed and any one opens at its own prompt**, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message (and below the sticky header) in a chat that renders late, jumps to the bottom and keeps the previous chat on screen during navigation, including matches that came only from the chat's title, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
 
 The end-to-end tests serve a mock chat app ([`tests/fixtures/mock-chat.html`](tests/fixtures/mock-chat.html)) on
 `https://chatgpt.com` via Playwright request routing, so no real account or network is involved:
@@ -655,9 +662,12 @@ percentage and when. Press **Open chat** on the one you want and Recall takes yo
 <details open>
 <summary><b>Do I need to refresh the page?</b></summary>
 
-No. Recall follows ChatGPT as you move between chats, and settings changes apply instantly in open tabs. The only
-time a reload might be needed is right after Recall itself is installed or updated, and even then Recall usually
-re-attaches by itself; if it can't, it shows a **Reload page** button.
+No. Recall checks every send, again and again, as you move between chats, and settings changes apply instantly in
+open tabs. Right after Recall itself is installed or updated, the new version attaches to open ChatGPT tabs by
+itself and the old one steps aside; only if that's impossible does it show a **Reload page** button.
+
+If you ever find Recall only works right after a refresh, turn on *Debug logging* (see below) and look for
+`[Recall:content] decision` lines when you send: no line at all means the send wasn't seen, which is worth reporting.
 </details>
 
 <details open>
