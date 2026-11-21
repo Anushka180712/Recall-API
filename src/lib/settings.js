@@ -13,7 +13,7 @@
     minChars: 12, // prompts shorter than this are never checked
     minContentTokens: 3, // ...nor prompts with fewer meaningful words
     maxChars: 1500, // longer prompts are treated as pasted, unique content
-    maxSuggestions: 3,
+    maxSuggestions: 4, // earlier chats listed in the dialog, best first
     freshnessGuard: true, // skip "latest / today / price..." questions
     passiveIndexing: true, // learn from chats you open, not just ones you send
     showLauncher: true, // small floating button on chatgpt.com

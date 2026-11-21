@@ -80,6 +80,12 @@
    * enough to merge "sorting/sorted/sorts" and "libraries/library".
    */
   function stem(word) {
+    const out = stemSuffix(word);
+    // Drop a silent final "e" so "reverse", "reversed" and "reversing" meet at "revers".
+    return out.length > 4 && out.endsWith('e') && /^[a-z]+$/.test(out) ? out.slice(0, -1) : out;
+  }
+
+  function stemSuffix(word) {
     if (word.length <= 3 || /\d/.test(word) || !/^[a-z+#]+$/.test(word)) return word;
     if (word.endsWith('ies') && word.length > 4) return word.slice(0, -3) + 'y';
     if (word.endsWith('sses')) return word.slice(0, -2);

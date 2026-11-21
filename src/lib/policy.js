@@ -257,7 +257,7 @@
     const live = others.filter(notSnoozed);
     if (!live.length) return decision(REASONS.SNOOZED);
 
-    return decision(REASONS.MATCH, live.slice(0, settings.maxSuggestions ?? 3));
+    return decision(REASONS.MATCH, live.slice(0, settings.maxSuggestions ?? 4));
   }
 
   function decision(reason, matches = []) {

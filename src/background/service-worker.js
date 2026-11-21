@@ -38,6 +38,11 @@ async function injectIntoOpenTabs() {
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install') await store.saveSettings({});
+  if (reason === 'update') {
+    // 1.1: the dialog lists up to 4 earlier chats (was 3) unless you changed it.
+    const s = await store.getSettings();
+    if (s.maxSuggestions === 3) await store.saveSettings({ maxSuggestions: 4 });
+  }
   if (reason === 'install' || reason === 'update') await injectIntoOpenTabs();
   await updateBadge();
 });

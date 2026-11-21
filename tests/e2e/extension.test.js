@@ -471,3 +471,35 @@ test('full settings page opens with settings visible and saves the debug switch'
   const saved = await worker.evaluate(() => globalThis.chrome.storage.sync.get('recall.settings'));
   assert.equal(saved['recall.settings'].debug, true);
 });
+
+test('several similar chats are listed; picking any one opens it at that prompt (not only exact copies)', async (t) => {
+  const env = await launch([
+    { id: 'chat-a', title: 'Linked lists A', prompts: ['How do I reverse a linked list in Python?'], updatedDaysAgo: 30 },
+    { id: 'chat-b', title: 'Linked lists B', prompts: ['intro question about sorting', 'reverse linked list python'], updatedDaysAgo: 20 },
+    { id: 'chat-c', title: 'Linked lists C', prompts: ['what is a stack', 'python: reversing a linked list?', 'thanks that helps'], updatedDaysAgo: 10 },
+    { id: 'chat-d', title: 'Linked lists D', prompts: ['reversing a linked list in python, how?'], updatedDaysAgo: 5 },
+  ]);
+  t.after(env.close);
+  const { page, server } = env;
+  await freshChat(page);
+  await recall(page, 'recall-welcome').waitFor();
+  // Learn the history once (new chats you send are learned automatically).
+  await recall(page, 'recall-welcome').getByText('Learn from my chats').click();
+  await page.waitForTimeout(2500);
+
+  await typePrompt(page, 'how can I reverse a linked list using python');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  const items = recall(page, 'recall-match');
+  assert.equal(await items.count(), 4, 'all four similar chats are offered');
+  assert.equal(server.sends.length, 0);
+
+  // Pick the chat-c entry, whose prompt is worded differently from what was typed.
+  const pick = items.filter({ hasText: 'Linked lists C' });
+  await pick.getByRole('button', { name: /Open chat/ }).click();
+  await page.waitForURL(/\/c\/chat-c/);
+  const target = page.locator('[data-recall-highlight="recall-jump-target"]');
+  await target.waitFor({ timeout: 10000 });
+  assert.equal((await target.innerText()).trim(), 'python: reversing a linked list?');
+  assert.equal(server.sends.length, 0, 'nothing was sent');
+});

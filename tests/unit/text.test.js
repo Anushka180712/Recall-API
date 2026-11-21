@@ -10,7 +10,7 @@ test('normalize lower-cases, strips accents, punctuation and URLs', () => {
 });
 
 test('tokenize drops filler words and stems', () => {
-  assert.deepEqual(text.tokenize('Can you please explain how closures work in JavaScript?'), ['closure', 'work', 'javascript']);
+  assert.deepEqual(text.tokenize('Can you please explain how closures work in JavaScript?'), ['closur', 'work', 'javascript']);
   assert.deepEqual(text.tokenize('sorting sorted sorts'), ['sort', 'sort', 'sort']);
   assert.deepEqual(text.tokenize('libraries'), ['library']);
 });
@@ -52,6 +52,6 @@ test('tokenizes Chinese, Japanese and Korean into two-character pieces', () => {
 test('keeps Hindi words whole and drops common function words in other languages', () => {
   const { tokenize } = require('../../src/lib/text.js');
   assert.deepEqual(tokenize('क्लोजर क्या है'), ['क्लोजर']);
-  assert.deepEqual(tokenize('¿Qué es un closure en JavaScript?'), ['closure', 'javascript']);
-  assert.deepEqual(tokenize('Erkläre mir bitte Closures'), ['closure']);
+  assert.deepEqual(tokenize('¿Qué es un closure en JavaScript?'), ['closur', 'javascript']);
+  assert.deepEqual(tokenize('Erkläre mir bitte Closures'), ['closur']);
 });

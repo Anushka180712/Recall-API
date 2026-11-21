@@ -11,7 +11,7 @@ and clears out stale chats in a few clicks instead of one by one.
 
 [![CI](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml/badge.svg)](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4f46e5)
-![Tests](https://img.shields.io/badge/tests-174%20passing-059669)
+![Tests](https://img.shields.io/badge/tests-175%20passing-059669)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-059669)
 ![Languages](https://img.shields.io/badge/UI-6%20languages-0ea5e9)
 ![Privacy](https://img.shields.io/badge/data-stays%20on%20your%20device-7c3aed)
@@ -68,7 +68,8 @@ finding things hard in the first place, Recall also offers to **clean those up i
 | | |
 |---|---|
 | 🔁 **Repeat detection** | Catches re-phrased questions, not just copy-pastes ("reverse linked list python" ≈ "How do I reverse a linked list in Python?"). Exact copies always count. |
-| 🎯 **Takes you to the exact message** | *Take me there* opens the earlier chat, loads older messages if needed, scrolls to **the message you asked**, outlines it and labels it "You asked this here". |
+| 📋 **Pick the right chat** | When several earlier chats are similar, up to 4 are listed best first, each with its title, the prompt you asked, the match % and when. Open whichever you want. |
+| 🎯 **Takes you to the exact message** | *Take me there* (or *Open chat* on any listed chat) opens it, loads older messages if needed, scrolls to **the message you asked**, outlines it and labels it "You asked this here". |
 | 🧠 **Knows when *not* to interrupt** | 14 explicit rules: never for "generate a new one" (in 9 languages), small talk, time-sensitive questions, follow-ups, attachments, temporary chats and more ([full list](#when-does-recall-step-in-and-when-doesnt-it)). |
 | 🔂 **No repeats inside a chat either** | Repeat a question in the same chat and Recall offers *Show me the answer* (scrolls up to it) instead of generating it again. |
 | ✋ **You're always in control** | *Ask anyway*, *Not the same*, *Keep editing*, **Pause for 1 hour**, an on/off switch and a **keyboard shortcut** (`Alt+Shift+R`). |
@@ -275,7 +276,7 @@ flowchart LR
     N --> T["2. Tokenise<br/>drop filler words<br/>stem, fold synonyms<br/>CJK → 2-char pieces"]
     T --> C["3. Candidates<br/>inverted index:<br/>only prompts sharing a word"]
     C --> S["4. Score<br/>0.7 × TF-IDF cosine<br/>+ 0.3 × trigram Jaccard"]
-    S --> G["5. Group by chat<br/>best prompt per chat,<br/>top 3 chats"]
+    S --> G["5. Group by chat<br/>best prompt per chat,<br/>top 4 chats"]
     G --> R["6. Rules<br/>policy.js decides"]
 ```
 
@@ -284,7 +285,7 @@ flowchart LR
 2. **Tokenise.**
    - Drop about 300 filler words in English, Spanish, Portuguese, French, German and Hindi/Hinglish ("can you please
      explain…", "¿qué es…", "kya hai…").
-   - Light stemming for Latin-script words (`sorting → sort`, `libraries → library`).
+   - Light stemming for Latin-script words (`sorting → sort`, `libraries → library`, `reverse / reversed / reversing → revers`).
    - Fold synonyms and abbreviations (`summarise / summary / tl;dr`, `vs / difference / compare`, `js → javascript`).
    - Chinese, Japanese and Korean have no spaces, so they are split into overlapping 2-character pieces
      (`什么是闭包 → 闭包`), the standard trick in CJK search.
@@ -300,7 +301,7 @@ flowchart LR
    - **Character-trigram Jaccard**: overlap of 3-letter chunks of the normalised text, so typos, plurals and word
      order barely matter (`cookeis` still matches `cookies`).
    - An exact copy scores 1.
-5. **Group by chat.** Only the best prompt per conversation counts; the top 3 conversations are shown.
+5. **Group by chat.** Only the best prompt per conversation counts; the top 4 conversations are shown, best first.
 6. **Apply the rules** in [the table above](#-recall-stays-out-of-the-way-when) and compare to the threshold.
 
 ### Thresholds
@@ -477,7 +478,7 @@ src/
   background/service-worker.js  defaults on install, re-inject after update, shortcut, OFF badge
 tests/
   unit/                       157 Node tests for src/lib, translations and the manifest
-  e2e/                        17 real-browser tests (Chromium + the extension + a mock chat app)
+  e2e/                        18 real-browser tests (Chromium + the extension + a mock chat app)
   fixtures/mock-chat.html     mock chat app used by the e2e tests and screenshots
 scripts/
   package.js                  builds the Chrome and Firefox zips
@@ -590,7 +591,7 @@ after each change. Turn on *Debug logging* to watch decisions in the console.
 
 ## Testing
 
-**174 automated tests** run on every push via GitHub Actions.
+**175 automated tests** run on every push via GitHub Actions.
 
 | Suite | Tests | What it covers |
 |---|---|---|
@@ -602,7 +603,7 @@ after each change. Turn on *Debug logging* to watch decisions in the console.
 | `store` | 10 | Persistence, merge, snoozes, pause/resume, health. |
 | `text` | 9 | Normalising and tokenising, including CJK, Hindi and other languages' filler words. |
 | `i18n`, `log`, `manifest`, `settings`, `routes` | 19 | Every locale has every key and placeholder within store limits; log levels and prompt redaction; every manifest file exists, libraries load in the right order, every `t('key')` used in code is translated; the Firefox manifest. |
-| **e2e** (real Chromium) | 17 | Redirect, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message in a chat that renders late and jumps to the bottom, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
+| **e2e** (real Chromium) | 18 | Redirect, **several similar chats listed and any one opens at its own prompt**, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message in a chat that renders late and jumps to the bottom, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
 
 The end-to-end tests serve a mock chat app ([`tests/fixtures/mock-chat.html`](tests/fixtures/mock-chat.html)) on
 `https://chatgpt.com` via Playwright request routing, so no real account or network is involved:
@@ -625,6 +626,37 @@ CHROMIUM_PATH=/path/to/chrome npm run test:e2e
 ## FAQ and troubleshooting
 
 <details open>
+<summary><b>Does "Take me there" only work for exact copies?</b></summary>
+
+No. It works for any match, re-phrased or exact. Recall remembers *which* of your earlier prompts matched, and
+scrolls to that prompt in the chat, even if it's worded differently from what you just typed.
+</details>
+
+<details open>
+<summary><b>What if several earlier chats match?</b></summary>
+
+The dialog lists up to 4 of them, best match first, each with its title, the prompt you asked there, the match
+percentage and when. Press **Open chat** on the one you want and Recall takes you to that chat, at that prompt.
+*Take me there* (or `O`) opens the top one.
+</details>
+
+<details open>
+<summary><b>Do I need to refresh the page?</b></summary>
+
+No. Recall follows ChatGPT as you move between chats, and settings changes apply instantly in open tabs. The only
+time a reload might be needed is right after Recall itself is installed or updated, and even then Recall usually
+re-attaches by itself; if it can't, it shows a **Reload page** button.
+</details>
+
+<details open>
+<summary><b>Do I have to keep clicking "Learn from my chats"?</b></summary>
+
+No. Every message you send is learned automatically (including in brand-new chats, as soon as ChatGPT gives the
+chat its id), and so is every chat you open. Other open ChatGPT tabs share what they learn. The one-time import is
+only for chats you had *before* installing Recall, or ones made on another device and never opened here.
+</details>
+
+<details>
 <summary><b>Why didn't Recall stop my repeated question?</b></summary>
 
 Click the Recall icon and look at **Last message you sent**: it gives the exact reason. The usual ones:

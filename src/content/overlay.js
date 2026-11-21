@@ -35,7 +35,7 @@
   p { margin: 0 0 12px; color: var(--muted); }
   .you { background: var(--soft); border-radius: 10px; padding: 8px 12px; margin: 0 0 14px; font-size: 13px;
     color: var(--fg); white-space: pre-wrap; word-break: break-word; max-height: 90px; overflow: auto; }
-  .matches { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
+  .matches { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; max-height: 46vh; overflow: auto; }
   .match { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid;
     grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
   .match:first-child { border-color: var(--accent); background: var(--accent-soft); }
