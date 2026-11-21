@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Recall</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <img src="../../icons/icon32.png" alt="" width="24" height="24" />
+        <div>
+          <h1>Recall</h1>
+          <span class="tag">Already asked that?</span>
+        </div>
+      </div>
+      <label class="switch" title="Turn Recall on or off">
+        <input type="checkbox" id="enabled" data-setting="enabled" />
+        <span aria-hidden="true"></span>
+        <span class="sr">Enabled</span>
+      </label>
+    </header>
+
+    <section class="stats" aria-label="Your stats">
+      <div><b id="stat-prompts">0</b><span>prompts known</span></div>
+      <div><b id="stat-conversations">0</b><span>chats indexed</span></div>
+      <div><b id="stat-redirects">0</b><span>repeats avoided</span></div>
+      <div><b id="stat-deleted">0</b><span>chats cleaned</span></div>
+    </section>
+
+    <section>
+      <h2>Sensitivity</h2>
+      <div class="segmented" role="radiogroup" aria-label="Sensitivity" id="presets"></div>
+      <p class="hint" id="preset-hint"></p>
+    </section>
+
+    <section>
+      <h2>Would Recall step in?</h2>
+      <div class="tester">
+        <input id="test-input" type="text" placeholder="Type a prompt to test…" autocomplete="off" />
+      </div>
+      <p class="result" id="test-result" aria-live="polite"></p>
+    </section>
+
+    <section class="actions">
+      <button id="import" class="primary">Learn from my existing chats</button>
+      <button id="cleanup">Clean up old chats</button>
+      <p class="hint" id="action-status" aria-live="polite"></p>
+    </section>
+
+    <details>
+      <summary>Settings</summary>
+      <label class="row"><input type="checkbox" data-setting="freshnessGuard" /> Skip time-sensitive questions (news, prices, "latest")</label>
+      <label class="row"><input type="checkbox" data-setting="passiveIndexing" /> Learn from chats I open</label>
+      <label class="row"><input type="checkbox" data-setting="cleanupNudge" /> Remind me to clean up stale chats</label>
+      <label class="row"><input type="checkbox" data-setting="showLauncher" /> Show the cleanup button on ChatGPT</label>
+      <label class="row num">Consider chats stale after
+        <input type="number" min="7" max="730" data-setting="staleDays" /> days</label>
+      <div class="row buttons">
+        <button id="export" class="small">Export my data</button>
+        <button id="clear" class="small danger-outline">Forget everything</button>
+      </div>
+    </details>
+
+    <footer>🔒 Your history never leaves this device.</footer>
+
+    <script src="../lib/umd.js"></script>
+    <script src="../lib/text.js"></script>
+    <script src="../lib/similarity.js"></script>
+    <script src="../lib/policy.js"></script>
+    <script src="../lib/historyIndex.js"></script>
+    <script src="../lib/settings.js"></script>
+    <script src="../lib/store.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
