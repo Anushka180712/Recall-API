@@ -93,7 +93,7 @@ class MockServer {
       if (!c) return json({ detail: 'not found' }, 404);
       const mapping = {};
       c.messages.forEach((msg, i) => {
-        mapping[`n${i}`] = { message: { author: { role: msg.role }, content: { parts: [msg.text] }, create_time: msg.t / 1000 } };
+        mapping[`n${i}`] = { message: { id: `${c.id}-m${i}`, author: { role: msg.role }, content: { parts: [msg.text] }, create_time: msg.t / 1000 } };
       });
       return json({ title: c.title, mapping });
     }

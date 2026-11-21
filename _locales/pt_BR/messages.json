@@ -295,5 +295,8 @@
   },
   "needReload": {
     "message": "Recarregue a aba do ChatGPT para o Recall conectar e tente de novo."
+  },
+  "jumpMissed": {
+    "message": "O chat foi aberto, mas essa mensagem exata não foi encontrada. Role para procurá-la."
   }
 }

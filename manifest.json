@@ -42,6 +42,7 @@
         "src/lib/log.js",
         "src/lib/text.js",
         "src/lib/similarity.js",
+        "src/lib/jump.js",
         "src/lib/policy.js",
         "src/lib/historyIndex.js",
         "src/lib/cleanup.js",

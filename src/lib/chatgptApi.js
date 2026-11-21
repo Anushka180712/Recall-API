@@ -141,7 +141,8 @@
 
     async function getConversation(id) {
       const data = await request(`/backend-api/conversation/${encodeURIComponent(id)}`);
-      return { id, title: data.title || '', prompts: extractUserPrompts(data) };
+      const messages = extractUserMessages(data);
+      return { id, title: data.title || '', prompts: messages.map((m) => m.text), messages };
     }
 
     /** Hides the chat exactly like the web app's own "Delete" menu item does. */
@@ -240,17 +241,27 @@
     return { id: it.id, title: it.title || '', createdAt: toMs(it.create_time), updatedAt: toMs(it.update_time) };
   }
 
-  /** User-authored text messages from a conversation payload, oldest first. */
-  function extractUserPrompts(data) {
-    const nodes = Object.values((data && data.mapping) || {});
+  /**
+   * User-authored text messages from a conversation payload, oldest first,
+   * with ChatGPT's own message ids (the page renders them as data-message-id,
+   * which is how "Take me there" finds the exact message).
+   * @returns {{id: string|null, text: string}[]}
+   */
+  function extractUserMessages(data) {
+    const nodes = Object.entries((data && data.mapping) || {});
     return nodes
-      .map((n) => n && n.message)
+      .map(([key, n]) => n && n.message && { ...n.message, id: n.message.id || key })
       .filter((m) => m && m.author && m.author.role === 'user' && m.content)
       .filter((m) => !m.metadata || !m.metadata.is_visually_hidden_from_conversation)
       .sort((a, b) => (a.create_time || 0) - (b.create_time || 0))
-      .map((m) => (m.content.parts || []).filter((p) => typeof p === 'string').join('\n').trim())
-      .filter(Boolean);
+      .map((m) => ({ id: m.id || null, text: (m.content.parts || []).filter((p) => typeof p === 'string').join('\n').trim() }))
+      .filter((m) => m.text);
   }
 
-  return { createClient, mapPool, ChatGPTApiError, extractUserPrompts, normalizeConversation, toMs };
+  /** Just the text of the user's messages, oldest first. */
+  function extractUserPrompts(data) {
+    return extractUserMessages(data).map((m) => m.text);
+  }
+
+  return { createClient, mapPool, ChatGPTApiError, extractUserPrompts, extractUserMessages, normalizeConversation, toMs };
 });

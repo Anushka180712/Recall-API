@@ -10,7 +10,9 @@
       nav a { display: block; padding: 6px 8px; border-radius: 8px; color: #333; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       nav a:hover, nav a.active { background: #e2e2e8; }
       main { display: flex; flex-direction: column; height: 100vh; }
-      #thread { flex: 1; overflow: auto; padding: 24px 15%; }
+      #thread { flex: 1; overflow: auto; padding: 0 15% 24px; }
+      /* Like ChatGPT: a sticky header covers the top of the scrolling thread. */
+      #thread > header { position: sticky; top: 0; height: 56px; margin: 0 -18% 12px; background: #fafafa; border-bottom: 1px solid #eee; z-index: 2; }
       .msg { margin: 10px 0; padding: 10px 14px; border-radius: 14px; max-width: 80%; }
       [data-message-author-role="user"] { background: #e9e9ef; margin-left: auto; }
       [data-message-author-role="assistant"] { background: transparent; }
@@ -50,16 +52,29 @@
         }));
       }
 
-      function addMsg(role, text) {
+      // Like ChatGPT: each message carries its id, and a turn wraps it in an <article>.
+      function msgEl(role, text, id) {
+        const turn = document.createElement('article');
+        turn.dataset.testid = 'conversation-turn';
         const d = document.createElement('div');
         d.className = 'msg';
         d.dataset.messageAuthorRole = role;
+        if (id) d.dataset.messageId = id;
         d.textContent = text;
-        thread.append(d);
+        turn.append(d);
+        return turn;
+      }
+      function addMsg(role, text, id) {
+        thread.append(msgEl(role, text, id));
+      }
+      function header() {
+        const h = document.createElement('header');
+        thread.prepend(h);
       }
 
       async function renderThread() {
         thread.replaceChildren();
+        header();
         const id = convId();
         if (!id) {
           const e = document.createElement('div');
@@ -76,17 +91,11 @@
         // Like the real app: render the newest turns first, older ones a moment
         // later, then jump to the bottom (twice, as layout settles).
         const cut = Math.max(0, msgs.length - 6);
-        for (const m of msgs.slice(cut)) addMsg(m.author.role, m.content.parts.join('\n'));
+        for (const m of msgs.slice(cut)) addMsg(m.author.role, m.content.parts.join('\n'), m.id);
         thread.scrollTop = thread.scrollHeight;
         setTimeout(() => {
-          const first = thread.firstChild;
-          for (const m of msgs.slice(0, cut)) {
-            const d = document.createElement('div');
-            d.className = 'msg';
-            d.dataset.messageAuthorRole = m.author.role;
-            d.textContent = m.content.parts.join('\n');
-            thread.insertBefore(d, first);
-          }
+          const first = thread.children[1];
+          for (const m of msgs.slice(0, cut)) thread.insertBefore(msgEl(m.author.role, m.content.parts.join('\n'), m.id), first);
           thread.scrollTop = thread.scrollHeight;
         }, 400);
         setTimeout(() => (thread.scrollTop = thread.scrollHeight), 1100);
@@ -117,6 +126,16 @@
         send();
       });
       window.addEventListener('popstate', () => { renderThread(); renderSidebar(); });
+      // Like ChatGPT: sidebar links navigate in-app, and the previous chat's
+      // messages stay on screen for a moment until the new chat has loaded.
+      document.getElementById('history').addEventListener('click', (e) => {
+        const a = e.target.closest('a');
+        if (!a) return;
+        e.preventDefault();
+        history.pushState({}, '', a.getAttribute('href'));
+        renderSidebar();
+        setTimeout(renderThread, 900);
+      });
 
       renderSidebar();
       renderThread();

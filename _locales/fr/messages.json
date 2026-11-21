@@ -295,5 +295,8 @@
   },
   "needReload": {
     "message": "Rechargez l’onglet ChatGPT pour que Recall se connecte, puis réessayez."
+  },
+  "jumpMissed": {
+    "message": "Le chat est ouvert, mais ce message précis est introuvable sur la page. Faites défiler pour le chercher."
   }
 }

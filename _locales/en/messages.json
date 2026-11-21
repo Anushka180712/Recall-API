@@ -295,5 +295,8 @@
   },
   "needReload": {
     "message": "Reload the ChatGPT tab once so Recall can connect, then try again."
+  },
+  "jumpMissed": {
+    "message": "Opened the chat, but couldn’t find that exact message on the page. Scroll to look for it."
   }
 }

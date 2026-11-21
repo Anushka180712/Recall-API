@@ -199,7 +199,7 @@
       matches: decision.matches,
       onOpen: (m) => {
         store.bumpStat('redirects').catch(() => {});
-        openAndJump(m);
+        openAndJump(m, prompt);
       },
       onAskAnyway: () => {
         store.bumpStat('overrides').catch(() => {});
@@ -308,29 +308,58 @@
 
   // ------------------------------------------------- "Take me there" jump
   const JUMP_KEY = 'recall.jump';
+  const jumpLog = globalThis.Recall.log.create('jump');
+  const { jump: jumpMod } = globalThis.Recall;
+
+  /** Message elements of the chat that was open before we navigated away (still on screen for a moment). */
+  let staleMessages = new WeakSet();
+
+  function saveJump(target) {
+    try {
+      sessionStorage.setItem(JUMP_KEY, JSON.stringify(target));
+    } catch {
+      /* storage blocked: we still open the chat */
+    }
+  }
+
+  function loadJump() {
+    try {
+      return JSON.parse(sessionStorage.getItem(JUMP_KEY) || 'null');
+    } catch {
+      return null;
+    }
+  }
 
   /**
    * Open the earlier chat and remember which message to scroll to. The target
    * lives in sessionStorage so it survives a full page load as well as
    * ChatGPT's in-app navigation.
+   *
+   * @param {object} m the chosen match ({conversationId, prompt, source, sameChat})
+   * @param {string} query what you had just typed
    */
-  function openAndJump(m) {
+  function openAndJump(m, query) {
+    const target = {
+      id: m.conversationId,
+      prompt: m.prompt,
+      query,
+      fromTitle: m.source === 'title',
+      at: Date.now(),
+    };
+    jumpLog.info('take me there', { chat: m.conversationId, fromTitle: target.fromTitle, sameChat: !!m.sameChat });
     if (m.sameChat) {
       // Already here: clear the repeated draft and scroll up to the earlier answer.
       clearComposer();
-      try {
-        sessionStorage.setItem(JUMP_KEY, JSON.stringify({ id: m.conversationId, prompt: m.prompt, at: Date.now() }));
-      } catch {
-        /* ignore */
-      }
+      staleMessages = new WeakSet();
+      saveJump(target);
       jumpToTarget();
       return;
     }
-    try {
-      sessionStorage.setItem(JUMP_KEY, JSON.stringify({ id: m.conversationId, prompt: m.prompt, title: m.source === 'title', at: Date.now() }));
-    } catch {
-      /* storage blocked: we still open the chat */
-    }
+    // Everything on screen now belongs to the chat we're leaving.
+    staleMessages = new WeakSet(userMessageEls());
+    saveJump(target);
+    lookUpMessage(target);
+
     const link = document.querySelector(`nav a[href$="/c/${CSS.escape(m.conversationId)}"], aside a[href$="/c/${CSS.escape(m.conversationId)}"]`);
     if (link) link.click(); // in-app navigation: no full reload, much faster
     else location.assign(routes.conversationUrl(m.conversationId, location.origin));
@@ -338,6 +367,27 @@
     setTimeout(() => {
       if (routes.conversationId(location.href) !== m.conversationId) location.assign(routes.conversationUrl(m.conversationId, location.origin));
     }, 1500);
+  }
+
+  /**
+   * Ask ChatGPT (in the background) for that chat's messages, to learn the
+   * exact message's id and full text. The page renders the id as
+   * data-message-id, which is the most reliable anchor there is. If this
+   * fails, text matching still works.
+   */
+  async function lookUpMessage(target) {
+    try {
+      const conv = await api.getConversation(target.id);
+      const hit = jumpMod.resolve(conv.messages || [], target);
+      const current = loadJump();
+      if (!hit || !current || current.at !== target.at) return jumpLog.debug('message lookup: no confident match', { messages: (conv.messages || []).length });
+      const msg = conv.messages[hit.index];
+      Object.assign(current, { messageId: msg.id, text: msg.text });
+      saveJump(current);
+      jumpLog.debug('message lookup', { messageId: msg.id, position: hit.index + 1, of: conv.messages.length, score: Math.round(hit.score * 100) / 100 });
+    } catch (err) {
+      jumpLog.debug('message lookup failed; using text matching', { error: err.message });
+    }
   }
 
   function clearComposer() {
@@ -357,23 +407,21 @@
   /**
    * Scroll to the remembered message once the chat has rendered.
    *
-   * ChatGPT renders a chat in several passes and then scrolls itself to the
-   * newest message, which would undo a naive scroll. So we:
-   *   1. wait until the list of messages stops changing,
-   *   2. find the best match (exact text first), scrolling the chat to the top
-   *      to make older turns render if it isn't there yet,
-   *   3. scroll to it and keep it in view for a few seconds, unless you start
-   *      scrolling yourself.
+   * ChatGPT keeps the previous chat on screen for a moment, renders the new one
+   * in several passes, and then scrolls itself to the newest message, which
+   * would undo a naive scroll. So we:
+   *   1. ignore messages left over from the previous chat,
+   *   2. look for ChatGPT's own message id first (instant and exact), else wait
+   *      until the messages stop changing and match by text,
+   *   3. if it isn't rendered yet, scroll the chat to the top so older turns
+   *      load, and keep going while new ones appear,
+   *   4. scroll it to the middle of the view (clear of the sticky header),
+   *      outline it, and keep it there for a few seconds unless you scroll.
    */
   function jumpToTarget() {
-    let target;
-    try {
-      target = JSON.parse(sessionStorage.getItem(JUMP_KEY) || 'null');
-    } catch {
-      return;
-    }
-    if (!target || Date.now() - target.at > 30000) return;
-    if (routes.conversationId(location.href) !== target.id) return;
+    const first = loadJump();
+    if (!first || Date.now() - first.at > 60000) return;
+    if (routes.conversationId(location.href) !== first.id) return;
     clearInterval(jumpTimer);
 
     const started = Date.now();
@@ -382,9 +430,20 @@
     let loadAttempts = 0;
     let noGrowth = 0;
     let countAtLastLoad = 0;
+    let lastReport = 0;
     jumpTimer = setInterval(() => {
-      const els = userMessageEls();
-      const timedOut = Date.now() - started > 15000;
+      if (retired) return clearInterval(jumpTimer);
+      const target = loadJump() || first; // picks up the id/text once the lookup returns
+      const els = userMessageEls().filter((el) => !staleMessages.has(el));
+      const rendered = els.map((el) => ({ id: messageIdOf(el), text: el.innerText || el.textContent || '' }));
+      const timedOut = Date.now() - started > 20000;
+
+      // Fast path: ChatGPT's own message id is on the page.
+      if (target.messageId) {
+        const hit = jumpMod.locate(rendered, { messageId: target.messageId });
+        if (hit) return finish(target, els[hit.index], hit, els.length);
+      }
+
       if (els.length !== lastCount) {
         lastCount = els.length;
         stableSince = Date.now();
@@ -392,8 +451,8 @@
       }
       if (!timedOut && (!els.length || Date.now() - stableSince < 700)) return; // still rendering
 
-      const match = els.length && !target.title ? bestMessage(els, target.prompt) : null;
-      if (match && match.score < 0.6 && !timedOut && loadAttempts < 12 && noGrowth < 2) {
+      const hit = els.length ? jumpMod.locate(rendered, target) : null;
+      if (!hit && !timedOut && loadAttempts < 15 && noGrowth < 3) {
         // Not rendered yet: scroll the chat to the top so older turns load,
         // and keep going while new (older) messages keep appearing.
         if (els.length <= countAtLastLoad) noGrowth++;
@@ -404,35 +463,47 @@
         els[0].scrollIntoView({ block: 'start' });
         loadAttempts++;
         stableSince = Date.now();
+        if (Date.now() - lastReport > 2000) {
+          lastReport = Date.now();
+          jumpLog.debug('not on screen yet, loading older messages', { rendered: els.length, attempt: loadAttempts });
+        }
         return;
       }
+      finish(target, hit ? els[hit.index] : null, hit, els.length);
+    }, 200);
+
+    function finish(target, el, hit, count) {
       clearInterval(jumpTimer);
       try {
         sessionStorage.removeItem(JUMP_KEY);
       } catch {
         /* ignore */
       }
+      staleMessages = new WeakSet();
       highlightSidebar(target.id);
-      if (match) reveal(match.el);
-    }, 200);
+      if (el) {
+        jumpLog.info('found the message', { via: hit.via, score: Math.round(hit.score * 100) / 100, position: hit.index + 1, of: count, ms: Date.now() - started });
+        reveal(el);
+      } else {
+        jumpLog.warn('could not find the message on the page', {
+          rendered: count,
+          hadMessageId: !!target.messageId,
+          selectors: dom.SELECTORS.userMessage,
+          ms: Date.now() - started,
+        });
+        overlay.toast(t('jumpMissed', 'Opened the chat, but couldn’t find that exact message on the page. Scroll to look for it.'), [], { timeout: 6000, testid: 'recall-jump-missed' });
+      }
+    }
   }
 
   function userMessageEls() {
-    return [...document.querySelectorAll(dom.SELECTORS.userMessage.join(','))];
+    return dom.userMessages ? dom.userMessages() : [...document.querySelectorAll(dom.SELECTORS.userMessage.join(','))];
   }
 
-  /** The rendered user message that best matches a prompt: {el, score}. */
-  function bestMessage(els, prompt) {
-    const { normalize } = globalThis.Recall.text;
-    const want = normalize(prompt);
-    let best = { el: els[0], score: -1 };
-    for (const el of els) {
-      const got = normalize(el.innerText || el.textContent || '');
-      const score = got === want || (want.length > 20 && got.startsWith(want)) ? 2 : globalThis.Recall.similarity.score(got.slice(0, 400), want);
-      // Prefer the earliest message on ties: that's where it was first answered.
-      if (score > best.score) best = { el, score };
-    }
-    return best;
+  /** ChatGPT's message id for a rendered message, if it has one. */
+  function messageIdOf(el) {
+    const holder = el.closest('[data-message-id]') || el.querySelector('[data-message-id]');
+    return holder ? holder.getAttribute('data-message-id') : null;
   }
 
   function scrollParent(el) {
@@ -443,26 +514,31 @@
     return document.scrollingElement;
   }
 
+  /** In view, and not hidden behind a sticky header at the top. */
   function inView(el) {
     const r = el.getBoundingClientRect();
-    return r.bottom > 0 && r.top < window.innerHeight && r.top > -r.height / 2;
+    return r.top >= 64 && r.top < window.innerHeight - 40;
   }
 
-  /** Scroll a message to the top of the view, highlight it, and hold it there briefly. */
+  /** Scroll a message to the middle of the view, highlight it, and hold it there briefly. */
   function reveal(el) {
     let userScrolled = false;
     const stop = () => (userScrolled = true);
     const opts = { passive: true, capture: true, once: true };
-    for (const type of ['wheel', 'touchmove', 'mousedown']) window.addEventListener(type, stop, opts);
-    const go = () => !userScrolled && el.isConnected && el.scrollIntoView({ block: 'start', behavior: 'auto' });
+    const events = ['wheel', 'touchmove', 'keydown'];
+    for (const type of events) window.addEventListener(type, stop, opts);
+    // The whole turn when there is one, so the message isn't cut off.
+    const box = el.closest('article, [data-testid^="conversation-turn"]') || el;
+    const tall = box.getBoundingClientRect().height > window.innerHeight * 0.6;
+    const go = () => !userScrolled && el.isConnected && box.scrollIntoView({ block: tall ? 'start' : 'center', behavior: 'auto' });
     go();
-    flash(el, 'recall-jump-target', 4000);
-    overlay.pin(el, t('jumpBadge', 'You asked this here'), 4000);
+    flash(el, 'recall-jump-target', 4500);
+    overlay.pin(el, t('jumpBadge', 'You asked this here'), 4500);
     // ChatGPT scrolls to the newest message after loading; put ours back.
-    for (const ms of [250, 600, 1200, 2000, 3000]) setTimeout(() => !inView(el) && go(), ms);
+    for (const ms of [150, 400, 800, 1300, 2000, 3000, 4000]) setTimeout(() => !inView(el) && go(), ms);
     setTimeout(() => {
-      for (const type of ['wheel', 'touchmove', 'mousedown']) window.removeEventListener(type, stop, opts);
-    }, 3500);
+      for (const type of events) window.removeEventListener(type, stop, opts);
+    }, 4500);
   }
 
   function highlightSidebar(id) {

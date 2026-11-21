@@ -181,3 +181,13 @@ test('restoreMany (undo) sends PATCH is_visible:true and reports failures per ch
   const patch = srv.calls.find((c) => c.method === 'PATCH');
   assert.deepEqual(JSON.parse(patch.body), { is_visible: true });
 });
+
+test('extractUserMessages keeps ChatGPT’s message ids (used to jump to the exact message)', () => {
+  const { extractUserMessages } = require('../../src/lib/chatgptApi.js');
+  const data = { mapping: {
+    k1: { message: { id: 'msg-1', author: { role: 'user' }, create_time: 2, content: { parts: ['second'] } } },
+    k0: { message: { author: { role: 'user' }, create_time: 1, content: { parts: ['first'] } } },
+    k2: { message: { id: 'a', author: { role: 'assistant' }, create_time: 3, content: { parts: ['answer'] } } },
+  } };
+  assert.deepEqual(extractUserMessages(data), [{ id: 'k0', text: 'first' }, { id: 'msg-1', text: 'second' }]);
+});

@@ -503,3 +503,57 @@ test('several similar chats are listed; picking any one opens it at that prompt 
   assert.equal((await target.innerText()).trim(), 'python: reversing a linked list?');
   assert.equal(server.sends.length, 0, 'nothing was sent');
 });
+
+test('"Take me there" from inside another chat lands on the right message (old chat lingers while the new one loads)', async (t) => {
+  const filler = Array.from({ length: 10 }, (_, i) => `side question ${i} about gardening tomatoes in pots`);
+  const env = await launch([
+    { id: 'here-chat', title: 'Gardening', prompts: ['how often should I water basil', 'what soil for tomatoes in pots', 'best fertilizer for tomato plants'], updatedDaysAgo: 1 },
+    { id: 'there-chat', title: 'Python help', prompts: [...filler.slice(0, 1), 'How do I reverse a linked list in Python?', ...filler.slice(1)], updatedDaysAgo: 9 },
+  ]);
+  t.after(env.close);
+  const { page, server } = env;
+  await page.goto(`${ORIGIN}/c/there-chat`);
+  await waitForRecall(page);
+  await settle(page, 2500);
+
+  await page.goto(`${ORIGIN}/c/here-chat`);
+  await waitForRecall(page);
+  await settle(page, 1500);
+  await typePrompt(page, 'reverse a linked list in python');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-open-top').click();
+  await page.waitForURL(/\/c\/there-chat/);
+
+  const target = page.locator('[data-recall-highlight="recall-jump-target"]');
+  await target.waitFor({ timeout: 15000 });
+  assert.equal((await target.innerText()).trim(), 'How do I reverse a linked list in Python?');
+  assert.equal(await target.getAttribute('data-message-id'), 'there-chat-m2', 'found by ChatGPT’s own message id');
+  await page.waitForTimeout(1800);
+  // Visible, and not hidden under the sticky header.
+  assert.ok(await target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return r.top >= 56 && r.bottom <= window.innerHeight;
+  }), 'the message is fully in view below the header');
+  assert.equal(server.sends.length, 0);
+});
+
+test('"Take me there" lands on the prompt even when only the chat TITLE matched (after importing history)', async (t) => {
+  const filler = Array.from({ length: 9 }, (_, i) => `unrelated question ${i} about baking sourdough bread at home`);
+  const env = await launch([
+    { id: 'titled-chat', title: 'Reverse a linked list in Python', prompts: [...filler.slice(0, 3), 'python: flip the order of nodes in a singly linked list', ...filler.slice(3)], updatedDaysAgo: 12 },
+  ]);
+  t.after(env.close);
+  const { page } = env;
+  await freshChat(page);
+  await recall(page, 'recall-welcome').getByText('Learn from my chats').click();
+  await page.waitForTimeout(2500);
+
+  await typePrompt(page, 'reverse a linked list in python');
+  await page.keyboard.press('Enter');
+  await recall(page, 'recall-dialog').waitFor();
+  await recall(page, 'recall-open-top').click();
+  await page.waitForURL(/\/c\/titled-chat/);
+  const target = page.locator('[data-recall-highlight="recall-jump-target"]');
+  await target.waitFor({ timeout: 15000 });
+  assert.equal((await target.innerText()).trim(), 'python: flip the order of nodes in a singly linked list');
+});

@@ -11,7 +11,7 @@ and clears out stale chats in a few clicks instead of one by one.
 
 [![CI](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml/badge.svg)](https://github.com/Anushka180712/Recall-API/actions/workflows/ci.yml)
 ![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-4f46e5)
-![Tests](https://img.shields.io/badge/tests-175%20passing-059669)
+![Tests](https://img.shields.io/badge/tests-184%20passing-059669)
 ![Dependencies](https://img.shields.io/badge/runtime%20dependencies-0-059669)
 ![Languages](https://img.shields.io/badge/UI-6%20languages-0ea5e9)
 ![Privacy](https://img.shields.io/badge/data-stays%20on%20your%20device-7c3aed)
@@ -407,13 +407,23 @@ for async work. One physical send that surfaces as keydown + click + submit is h
 
 ### Data flow: "Take me there"
 
-1. The target (chat id + prompt) is saved in `sessionStorage`, so it survives both ChatGPT's in-app navigation and a full page load.
-2. Recall clicks the chat's sidebar link (fast, no reload), falling back to a normal navigation.
-3. It waits until the list of messages stops changing for 700 ms (ChatGPT renders in several passes).
-4. It picks the best message (exact text first, else similarity). If it's not rendered yet, it scrolls the chat
-   to the top so older messages load, and keeps going while new ones appear (up to 12 rounds).
-5. It scrolls the message to the top, outlines it, pins a "You asked this here" label, and re-scrolls a few times
-   over 3 seconds because ChatGPT jumps to the bottom after loading. It stops as soon as you scroll yourself.
+The matching logic is pure and unit-tested in [`src/lib/jump.js`](src/lib/jump.js); the page work is in `content.js`.
+
+1. The target is saved in `sessionStorage` (survives in-app navigation and a full page load): the chat id, the
+   earlier prompt that matched, **what you just typed**, and whether the match came from the chat's *title*.
+2. In the background Recall asks ChatGPT for that chat's messages and picks the one you meant. That gives it
+   ChatGPT's own **message id** and the message's full text.
+3. It opens the chat through the sidebar link (no reload), or a normal navigation if the link isn't there.
+4. Messages from the chat you just left are ignored, because ChatGPT keeps them on screen for a moment.
+5. As soon as an element with that **`data-message-id`** appears, that's the one. Otherwise, once the messages
+   stop changing for 700 ms, it matches by text: exact (or the start of a long message) first, then similarity to
+   the earlier prompt *and* to what you typed. A match that came from the chat's title still lands on the message
+   that best fits your question.
+6. If it isn't rendered yet, it scrolls the chat to the top so older messages load, and keeps going while new ones appear.
+7. It scrolls the message's turn to the **middle** of the view (clear of ChatGPT's sticky top bar), outlines it,
+   pins a "You asked this here" label, and puts it back for 4 seconds because ChatGPT jumps to the bottom after
+   loading. It stops as soon as you scroll or type. If it truly can't find the message, it says so instead of
+   leaving you guessing.
 
 ### Data flow: import
 
@@ -463,6 +473,7 @@ src/
     log.js                    levelled, structured logging with prompt redaction and a ring buffer
     text.js                   normalise, tokenise (multilingual filler words, stemming, synonyms, CJK), hash
     similarity.js             TF-IDF cosine + character-trigram Jaccard
+    jump.js                   which message is "the one" for Take me there (message id, text, similarity)
     policy.js                 the rules: when to step in and why (single source of truth)
     historyIndex.js           searchable, serialisable, mergeable prompt index (inverted index + exact map)
     cleanup.js                stale-chat scoring and reasons
@@ -477,8 +488,8 @@ src/
   popup/                      popup + full settings page (popup.html?options=1)
   background/service-worker.js  defaults on install, re-inject after update, shortcut, OFF badge
 tests/
-  unit/                       157 Node tests for src/lib, translations and the manifest
-  e2e/                        18 real-browser tests (Chromium + the extension + a mock chat app)
+  unit/                       164 Node tests for src/lib, translations and the manifest
+  e2e/                        20 real-browser tests (Chromium + the extension + a mock chat app)
   fixtures/mock-chat.html     mock chat app used by the e2e tests and screenshots
 scripts/
   package.js                  builds the Chrome and Firefox zips
@@ -591,19 +602,20 @@ after each change. Turn on *Debug logging* to watch decisions in the console.
 
 ## Testing
 
-**175 automated tests** run on every push via GitHub Actions.
+**184 automated tests** run on every push via GitHub Actions.
 
 | Suite | Tests | What it covers |
 |---|---|---|
 | `policy` | 56 | Every rule in the table, rule priority ("new answer" beats an exact duplicate), exact copies of long prompts, same-chat repeats, pause, "new answer" and small talk in 9 languages, matching in Spanish, Chinese and Hindi. |
 | `similarity` | 23 | Labelled paraphrases must match; same-template, different-topic pairs must not. |
 | `historyIndex` | 16 | Ranking, IDF, caps, eviction, cross-tab merge, deletions, wipe. |
-| `chatgptApi` | 14 | Parallel paging, concurrency, 429 back-off, token refresh, partial delete failures, undo (restore), friendly errors. |
+| `chatgptApi` | 15 | Message ids, parallel paging, concurrency, 429 back-off, token refresh, partial delete failures, undo (restore), friendly errors. |
 | `cleanup` | 10 | Each staleness signal, duplicates, protected/open chats, malformed input. |
 | `store` | 10 | Persistence, merge, snoozes, pause/resume, health. |
 | `text` | 9 | Normalising and tokenising, including CJK, Hindi and other languages' filler words. |
 | `i18n`, `log`, `manifest`, `settings`, `routes` | 19 | Every locale has every key and placeholder within store limits; log levels and prompt redaction; every manifest file exists, libraries load in the right order, every `t('key')` used in code is translated; the Firefox manifest. |
-| **e2e** (real Chromium) | 18 | Redirect, **several similar chats listed and any one opens at its own prompt**, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message in a chat that renders late and jumps to the bottom, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
+| `jump` | 6 | Message id beats text, exact text, re-phrased matches, title-only matches, truncated long messages, no wrong guesses. |
+| **e2e** (real Chromium) | 20 | Redirect, **several similar chats listed and any one opens at its own prompt**, Ask anyway, Esc, explicit "new answer", small talk, fresh info, same-chat repeats, *Not the same*, import and passive learning, bulk delete with confirmation, **undo**, **pause and resume**, **focus stays in the dialog**, popup tester and *Last message*, the **settings page**, exact pasted copies, *Take me there* landing on the right message (and below the sticky header) in a chat that renders late, jumps to the bottom and keeps the previous chat on screen during navigation, including matches that came only from the chat's title, refused deletes, reloading the extension mid-session, and a **speed test** (200 chats from a slow server in under 15 s). |
 
 The end-to-end tests serve a mock chat app ([`tests/fixtures/mock-chat.html`](tests/fixtures/mock-chat.html)) on
 `https://chatgpt.com` via Playwright request routing, so no real account or network is involved:
@@ -680,9 +692,14 @@ Set sensitivity to **Strict**, press **Not the same** on suggestions that aren't
 <details>
 <summary><b>"Take me there" opened the chat but not the exact message.</b></summary>
 
-Recall waits for the chat to finish loading, loads older messages if needed, and keeps the message in view for a
-few seconds. If you scroll during that time, it stops so it doesn't fight you. In extremely long chats, or if the
-chat was found by its title only, it opens the chat and highlights it in the sidebar.
+Recall looks the message up by ChatGPT's own message id, waits for the chat to load, loads older messages if
+needed, and keeps the message in view for 4 seconds (it stops if you scroll or type, so it doesn't fight you). If
+it still misses, please send the log lines:
+
+1. Click the Recall icon → **Settings** → tick **Debug logging**.
+2. On chatgpt.com press `F12` (Mac: `Cmd+Option+J`) to open the console, and type `Recall` in its filter box.
+3. Try *Take me there* again and copy the `[Recall:jump]` lines. They show whether the message id was found, how
+   many messages were on the page, and how the match was made. They contain no prompt text unless debug is on.
 </details>
 
 <details>
